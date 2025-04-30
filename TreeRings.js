@@ -172,16 +172,79 @@ function plotResults(resultData) {
         canvasPlot.remove();
     }
 
+    // Create a container div for the plot and controls
+    const container = document.createElement('div');
+    container.style.display = 'flex';
+    container.style.alignItems = 'start';
+    container.style.gap = '20px';
+    document.body.appendChild(container);
+
+    // Create canvas and add to container
     canvasPlot = document.createElement('canvas');
     canvasPlot.width = 500;
     canvasPlot.height = 400;
-    document.body.appendChild(canvasPlot);
+    container.appendChild(canvasPlot);
+
+    // Create controls div
+    const controls = document.createElement('div');
+    controls.style.padding = '20px';
+    container.appendChild(controls);
+
+    // Add window size slider
+    const windowLabel = document.createElement('label');
+    windowLabel.textContent = 'Window Size: ';
+    const windowInput = document.createElement('input');
+    windowInput.type = 'range';
+    windowInput.min = '2';
+    windowInput.max = '20';
+    windowInput.value = windowSize;
+    windowInput.step = '1';
+    const windowValue = document.createElement('span');
+    windowValue.textContent = windowSize;
+    controls.appendChild(windowLabel);
+    controls.appendChild(windowInput);
+    controls.appendChild(windowValue);
+    controls.appendChild(document.createElement('br'));
+    controls.appendChild(document.createElement('br'));
+
+    // Add prominence slider
+    const promLabel = document.createElement('label');
+    promLabel.textContent = 'Prominence: ';
+    const promInput = document.createElement('input');
+    promInput.type = 'range';
+    promInput.min = '1';
+    promInput.max = '50';
+    promInput.value = prominence;
+    promInput.step = '1';
+    const promValue = document.createElement('span');
+    promValue.textContent = prominence;
+    controls.appendChild(promLabel);
+    controls.appendChild(promInput);
+    controls.appendChild(promValue);
+
+    // Update function
+    const updatePlot = () => {
+        windowSize = parseInt(windowInput.value);
+        prominence = parseInt(promInput.value);
+        windowValue.textContent = windowSize;
+        promValue.textContent = prominence;
+        
+        // Recalculate smoothed data and valleys
+        let smoothedGray = smoothData(meanGray, windowSize);
+        let valleys = findValleysWithProminence(smoothedGray, prominence);
+        
+        // Redraw plot
+        drawPlot(meanGray, smoothedGray, valleys);
+    };
+
+    // Add event listeners
+    windowInput.addEventListener('input', updatePlot);
+    promInput.addEventListener('input', updatePlot);
 
     ctxPlot = canvasPlot.getContext('2d');
-    ctxPlot.putImageData(resultData, 0, 0);
 
-    let meanGray = []
-
+    // Calculate initial values
+    let meanGray = [];
     for (let i = 0; i < resultData.width; i++) {
         let sumGray = 0;
         for (let j = 0; j < resultData.height; j++) {
@@ -190,89 +253,111 @@ function plotResults(resultData) {
         }
         meanGray.push(sumGray / resultData.height);
     }
-    console.log(meanGray);
 
-    
-    
     let smoothedGray = smoothData(meanGray, windowSize);
-
     let valleys = findValleysWithProminence(smoothedGray, prominence);
-    console.log(valleys);
 
-    // Clear previous plot
-    ctxPlot.clearRect(0, 0, canvasPlot.width, canvasPlot.height);
+    // Separate drawing function
+    function drawPlot(meanGray, smoothedGray, valleys) {
+        // Clear previous plot
+        ctxPlot.clearRect(0, 0, canvasPlot.width, canvasPlot.height);
 
-    // Find min and max values for scaling
-    const minGray = Math.min(...meanGray);
-    const maxGray = Math.max(...meanGray);
-    const range = maxGray - minGray;
+        // Find min and max values for scaling
+        const minGray = Math.min(...meanGray);
+        const maxGray = Math.max(...meanGray);
+        const range = maxGray - minGray;
 
-    // Plot settings
-    const padding = 20;
-    const plotHeight = canvasPlot.height - (2 * padding);
+        // Plot settings
+        const padding = 20;
+        const plotHeight = canvasPlot.height - (2 * padding);
 
-    // Draw axes
-    ctxPlot.beginPath();
-    ctxPlot.strokeStyle = '#000';
-    ctxPlot.moveTo(padding, padding);
-    ctxPlot.lineTo(padding, canvasPlot.height - padding);
-    ctxPlot.lineTo(canvasPlot.width - padding, canvasPlot.height - padding);
-    ctxPlot.stroke();
-
-    // Plot the original data
-    ctxPlot.beginPath();
-    ctxPlot.strokeStyle = '#0000FF';  // Blue for original data
-    for (let i = 0; i < meanGray.length; i++) {
-        const x = padding + (i * (canvasPlot.width - 2 * padding) / meanGray.length);
-        const y = canvasPlot.height - padding - ((meanGray[i] - minGray) / range * plotHeight);
-        if (i === 0) {
-            ctxPlot.moveTo(x, y);
-        } else {
-            ctxPlot.lineTo(x, y);
-        }
-    }
-    ctxPlot.stroke();
-
-    // Plot the smoothed data
-    ctxPlot.beginPath();
-    ctxPlot.strokeStyle = '#FF6600';  // Orange for smoothed data
-    for (let i = 0; i < smoothedGray.length; i++) {
-        const x = padding + (i * (canvasPlot.width - 2 * padding) / smoothedGray.length);
-        const y = canvasPlot.height - padding - ((smoothedGray[i] - minGray) / range * plotHeight);
-        if (i === 0) {
-            ctxPlot.moveTo(x, y);
-        } else {
-            ctxPlot.lineTo(x, y);
-        }
-    }
-    ctxPlot.stroke();
-
-    // Draw valleys
-    // Plot valleys as red dots
-    ctxPlot.fillStyle = '#FF0000';
-    for (let valley of valleys) {
-        const x = padding + (valley.index * (canvasPlot.width - 2 * padding) / meanGray.length);
-        const y = canvasPlot.height - padding - ((valley.value - minGray) / range * plotHeight);
+        // Draw axes
         ctxPlot.beginPath();
-        ctxPlot.arc(x, y, 3, 0, 2 * Math.PI);
-        ctxPlot.fill();
-    }
+        ctxPlot.strokeStyle = '#000';
+        ctxPlot.moveTo(padding, padding);
+        ctxPlot.lineTo(padding, canvasPlot.height - padding);
+        ctxPlot.lineTo(canvasPlot.width - padding, canvasPlot.height - padding);
+        ctxPlot.stroke();
 
-    // Draw dots on the original image at valley locations
-    ctx.fillStyle = '#FF0000';
-    for (let valley of valleys) {
-        const x = points[0].x + (valley.index * (points[1].x - points[0].x) / meanGray.length);
-        const y = points[0].y + (valley.index * (points[1].y - points[0].y) / meanGray.length);
+        // Plot the original data
+        ctxPlot.beginPath();
+        ctxPlot.strokeStyle = '#0000FF';
+        for (let i = 0; i < meanGray.length; i++) {
+            const x = padding + (i * (canvasPlot.width - 2 * padding) / meanGray.length);
+            const y = canvasPlot.height - padding - ((meanGray[i] - minGray) / range * plotHeight);
+            if (i === 0) {
+                ctxPlot.moveTo(x, y);
+            } else {
+                ctxPlot.lineTo(x, y);
+            }
+        }
+        ctxPlot.stroke();
+
+        // Plot the smoothed data
+        ctxPlot.beginPath();
+        ctxPlot.strokeStyle = '#FF6600';
+        for (let i = 0; i < smoothedGray.length; i++) {
+            const x = padding + (i * (canvasPlot.width - 2 * padding) / smoothedGray.length);
+            const y = canvasPlot.height - padding - ((smoothedGray[i] - minGray) / range * plotHeight);
+            if (i === 0) {
+                ctxPlot.moveTo(x, y);
+            } else {
+                ctxPlot.lineTo(x, y);
+            }
+        }
+        ctxPlot.stroke();
+
+        // Draw valleys
+        ctxPlot.fillStyle = '#FF0000';
+        for (let valley of valleys) {
+            const x = padding + (valley.index * (canvasPlot.width - 2 * padding) / meanGray.length);
+            const y = canvasPlot.height - padding - ((valley.value - minGray) / range * plotHeight);
+            ctxPlot.beginPath();
+            ctxPlot.arc(x, y, 3, 0, 2 * Math.PI);
+            ctxPlot.fill();
+        }
+
+        // Update valley points on the original image
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.putImageData(imgCopy, 0, 0);
+        
+        // Redraw the original points and line
         ctx.beginPath();
-        ctx.arc(x, y, 3, 0, 2 * Math.PI);
+        ctx.arc(points[0].x, points[0].y, 5, 0, 2 * Math.PI);
+        ctx.arc(points[1].x, points[1].y, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = 'red';
         ctx.fill();
+        
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        ctx.lineTo(points[1].x, points[1].y);
+        ctx.strokeStyle = 'red';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Draw valley points on original image
+        ctx.fillStyle = '#FF0000';
+        for (let valley of valleys) {
+            const x = points[0].x + (valley.index * (points[1].x - points[0].x) / meanGray.length);
+            const y = points[0].y + (valley.index * (points[1].y - points[0].y) / meanGray.length);
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+
+        // Update valley count
+        if (document.querySelector('.valley-count')) {
+            document.querySelector('.valley-count').remove();
+        }
+        const valleyText = document.createElement('p');
+        valleyText.className = 'valley-count';
+        valleyText.textContent = `Number of valleys detected: ${valleys.length}`;
+        valleyText.style.textAlign = 'center';
+        document.body.appendChild(valleyText);
     }
 
-    // Add valley count text
-    const valleyText = document.createElement('p');
-    valleyText.textContent = `Number of valleys detected: ${valleys.length}`;
-    valleyText.style.textAlign = 'center';
-    document.body.appendChild(valleyText);
+    // Initial draw
+    drawPlot(meanGray, smoothedGray, valleys);
 }
 
 function findValleysWithProminence(data, minProminence = 0) {
