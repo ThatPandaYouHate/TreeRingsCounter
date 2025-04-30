@@ -1,9 +1,15 @@
 // Canvas and context variables
 let canvas;
+let canvasSlice;
+let canvasPlot;
 let ctx;
+let ctxSlice;
+let ctxPlot;
 let points = [];
 let img;
 let imgCopy;
+let windowSize = 4;
+let prominence = 7;
 const bandwidth = 5;
 
 // Setup file input listener
@@ -134,18 +140,194 @@ function createSliceImage() {
         }
     }
     
+    if (canvasSlice) {
+        canvasSlice.remove();
+    }
+
+    canvasSlice = document.createElement('canvas');
+    canvasSlice.width = length;
+    canvasSlice.height = bandwidth;
+    document.body.appendChild(canvasSlice);
+        
+    ctxSlice = canvasSlice.getContext('2d');
+    ctxSlice.putImageData(resultData, 0, 0);
+
+    plotResults(resultData);
+
     // Put image data and save
-    resultCtx.putImageData(resultData, 0, 0);
+    //resultCtx.putImageData(resultData, 0, 0);
     
     // Convert to jpg and download
-    const link = document.createElement('a');
-    link.download = 'treeRingsTest.jpg';
-    link.href = resultCanvas.toDataURL('image/jpeg');
-    link.click();
+    //const link = document.createElement('a');
+    //link.download = 'treeRingsTest.jpg';
+    //link.href = resultCanvas.toDataURL('image/jpeg');
+    //link.click();
     
     // Clean up
     canvas.removeEventListener('click', handleClick);
 }
 
+function plotResults(resultData) {
+    if (canvasPlot) {
+        canvasPlot.remove();
+    }
+
+    canvasPlot = document.createElement('canvas');
+    canvasPlot.width = 500;
+    canvasPlot.height = 400;
+    document.body.appendChild(canvasPlot);
+
+    ctxPlot = canvasPlot.getContext('2d');
+    ctxPlot.putImageData(resultData, 0, 0);
+
+    let meanGray = []
+
+    for (let i = 0; i < resultData.width; i++) {
+        let sumGray = 0;
+        for (let j = 0; j < resultData.height; j++) {
+            const index = (j * resultData.width + i) * 4;
+            sumGray += resultData.data[index];
+        }
+        meanGray.push(sumGray / resultData.height);
+    }
+    console.log(meanGray);
+
+    
+    
+    let smoothedGray = smoothData(meanGray, windowSize);
+
+    let valleys = findValleysWithProminence(smoothedGray, prominence);
+    console.log(valleys);
+
+    // Clear previous plot
+    ctxPlot.clearRect(0, 0, canvasPlot.width, canvasPlot.height);
+
+    // Find min and max values for scaling
+    const minGray = Math.min(...meanGray);
+    const maxGray = Math.max(...meanGray);
+    const range = maxGray - minGray;
+
+    // Plot settings
+    const padding = 20;
+    const plotHeight = canvasPlot.height - (2 * padding);
+
+    // Draw axes
+    ctxPlot.beginPath();
+    ctxPlot.strokeStyle = '#000';
+    ctxPlot.moveTo(padding, padding);
+    ctxPlot.lineTo(padding, canvasPlot.height - padding);
+    ctxPlot.lineTo(canvasPlot.width - padding, canvasPlot.height - padding);
+    ctxPlot.stroke();
+
+    // Plot the original data
+    ctxPlot.beginPath();
+    ctxPlot.strokeStyle = '#0000FF';  // Blue for original data
+    for (let i = 0; i < meanGray.length; i++) {
+        const x = padding + (i * (canvasPlot.width - 2 * padding) / meanGray.length);
+        const y = canvasPlot.height - padding - ((meanGray[i] - minGray) / range * plotHeight);
+        if (i === 0) {
+            ctxPlot.moveTo(x, y);
+        } else {
+            ctxPlot.lineTo(x, y);
+        }
+    }
+    ctxPlot.stroke();
+
+    // Plot the smoothed data
+    ctxPlot.beginPath();
+    ctxPlot.strokeStyle = '#FF6600';  // Orange for smoothed data
+    for (let i = 0; i < smoothedGray.length; i++) {
+        const x = padding + (i * (canvasPlot.width - 2 * padding) / smoothedGray.length);
+        const y = canvasPlot.height - padding - ((smoothedGray[i] - minGray) / range * plotHeight);
+        if (i === 0) {
+            ctxPlot.moveTo(x, y);
+        } else {
+            ctxPlot.lineTo(x, y);
+        }
+    }
+    ctxPlot.stroke();
+
+    // Draw valleys
+    // Plot valleys as red dots
+    ctxPlot.fillStyle = '#FF0000';
+    for (let valley of valleys) {
+        const x = padding + (valley.index * (canvasPlot.width - 2 * padding) / meanGray.length);
+        const y = canvasPlot.height - padding - ((valley.value - minGray) / range * plotHeight);
+        ctxPlot.beginPath();
+        ctxPlot.arc(x, y, 3, 0, 2 * Math.PI);
+        ctxPlot.fill();
+    }
+
+    // Draw dots on the original image at valley locations
+    ctx.fillStyle = '#FF0000';
+    for (let valley of valleys) {
+        const x = points[0].x + (valley.index * (points[1].x - points[0].x) / meanGray.length);
+        const y = points[0].y + (valley.index * (points[1].y - points[0].y) / meanGray.length);
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, 2 * Math.PI);
+        ctx.fill();
+    }
+
+    // Add valley count text
+    const valleyText = document.createElement('p');
+    valleyText.textContent = `Number of valleys detected: ${valleys.length}`;
+    valleyText.style.textAlign = 'center';
+    document.body.appendChild(valleyText);
+}
+
+function findValleysWithProminence(data, minProminence = 0) {
+    const valleys = [];
+  
+    for (let i = 1; i < data.length - 1; i++) {
+      const current = data[i];
+      const prev = data[i - 1];
+      const next = data[i + 1];
+  
+      // Check for local minimum
+      if (current < prev && current < next) {
+        // Look left
+        let leftMax = prev;
+        for (let j = i - 2; j >= 0 && data[j] > current; j--) {
+          if (data[j] > leftMax) leftMax = data[j];
+        }
+  
+        // Look right
+        let rightMax = next;
+        for (let j = i + 2; j < data.length && data[j] > current; j++) {
+          if (data[j] > rightMax) rightMax = data[j];
+        }
+  
+        // Calculate prominence
+        const prominence = Math.min(leftMax - current, rightMax - current);
+  
+        if (prominence >= minProminence) {
+          valleys.push({ index: i, value: current, prominence });
+        }
+      }
+    }
+  
+    return valleys;
+  }
+
+  function smoothData(data, windowSize = 5) {
+    // Apply moving average smoothing
+    let smoothedGray = [];
+    
+    for (let i = 0; i < data.length; i++) {
+        let sum = 0;
+        let count = 0;
+        
+        // Calculate average of surrounding points
+        for (let j = Math.max(0, i - Math.floor(windowSize/2)); 
+             j <= Math.min(data.length - 1, i + Math.floor(windowSize/2)); j++) {
+            sum += data[j];
+            count++;
+        }
+        
+        smoothedGray.push(sum / count);
+    }
+
+    return smoothedGray;
+}
 // Start the process
 loadImage();

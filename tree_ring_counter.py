@@ -30,7 +30,7 @@ print(len(means_list))
 total_mid = (np.max(means_list)+np.min(means_list))/2
 
 # Find valleys (invert the signal to find peaks)
-valleys, _ = find_peaks(-np.array(means_list), prominence=5)  # Adjust prominence as needed
+valleys, _ = find_peaks(-np.array(means_list), prominence=8)  # Adjust prominence as needed
 
 # Filter valleys to only include those below the mean
 significant_valleys = [v for v in valleys]
