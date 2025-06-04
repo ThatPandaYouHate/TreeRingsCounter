@@ -14,19 +14,51 @@
         }
         canvas {
             border: 1px solid #ccc;
-            margin-top: 20px;
         }
         #upload-container {
             margin-bottom: 20px;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+        }
+        #imageUpload {
+            display: none;  /* Hide the default file input */
+        }
+        .upload-btn {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+            border: none;
+            text-align: center;
+        }
+        .upload-btn:hover {
+            background-color: #45a049;
+        }
+        .canvas-container {
+            width: 50vw;
+            height: 60vh;
+            border: 2px solid #ccc;
+            overflow: hidden;
+            position: relative;
+            margin: 20px;
+        }
+        .canvas-wrapper {
+            position: absolute;
+            cursor: move;
+            transform-origin: 0 0;
         }
     </style>
 </head>
 <body>
-    <h1>Tree Rings Analysis</h1>
     <div id="upload-container">
         <input type="file" id="imageUpload" accept="image/*">
+        <label for="imageUpload" class="upload-btn">Choose Image</label>
     </div>
-    <p>Click two points on the image to create a slice</p>
     
     <!-- Load the JavaScript file -->
     <script src="TreeRings.js"></script>

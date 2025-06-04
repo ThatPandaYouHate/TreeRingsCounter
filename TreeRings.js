@@ -1,16 +1,23 @@
 // Canvas and context variables
 let canvas;
 let canvasSlice;
-let canvasPlot;
+let canvasPlot; 
+let resultCanvas;
 let ctx;
 let ctxSlice;
 let ctxPlot;
 let points = [];
 let img;
+let imageData;
 let imgCopy;
 let windowSize = 4;
 let prominence = 7;
-const bandwidth = 5;
+const bandwidth = 50;
+let scale = 1;
+let isDragging = false;
+let startX, startY, translateX = 0, translateY = 0;
+let movePoint = -1;
+let meanGray = [];
 
 // Setup file input listener
 document.getElementById('imageUpload').addEventListener('change', function(e) {
@@ -26,6 +33,9 @@ document.getElementById('imageUpload').addEventListener('change', function(e) {
 
 // Load and setup image
 function loadImage(imgSource) {
+    // Hide the upload container after image is loaded
+    
+    
     // Clear previous canvas if it exists
     if (canvas) {
         canvas.remove();
@@ -35,56 +45,201 @@ function loadImage(imgSource) {
     img = new Image();
     img.src = imgSource;
     img.onload = function() {
+        // Create container and wrapper
+        const container = document.createElement('div');
+        container.className = 'canvas-container';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'canvas-wrapper';
+        
         canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        document.body.appendChild(canvas);
+        canvasDraw = document.createElement('canvas');
+        const targetWidth = window.innerWidth * 0.5;
+        const aspectRatio = img.height / img.width;
+        const targetHeight = targetWidth * aspectRatio;
+        
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+
+        canvasDraw.width = targetWidth;
+        canvasDraw.height = targetHeight;
+        
+        // Append elements
+        wrapper.appendChild(canvas);
+        //wrapper.appendChild(canvasDraw);
+        container.appendChild(wrapper);
+        document.body.appendChild(container);
         
         ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
+        ctxDraw = canvasDraw.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         
         // Convert to grayscale
-        let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         let data = imageData.data;
         for (let i = 0; i < data.length; i += 4) {
-
             let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
             data[i] = data[i + 1] = data[i + 2] = gray;
         }
         ctx.putImageData(imageData, 0, 0);
         
-        // Store grayscale copy
         imgCopy = ctx.getImageData(0, 0, canvas.width, canvas.height);
         
-        // Add click listener
-        canvas.addEventListener('click', handleClick);
+        // Add event listeners for dragging and zooming
+        setupInteractions(wrapper, container);
+        
+        console.log("remove upload container");
+        document.getElementById('upload-container').style.display = 'none';
+        
     };
+
+    
+}
+
+function setupInteractions(wrapper, container) {
+    // Mouse drag
+    wrapper.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX - translateX;
+        startY = e.clientY - translateY;
+
+        if (points.length == 2) {
+            movePoint = onPointClick(e);
+        }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        if (movePoint != -1 ) {
+            const wrapper = canvas.parentElement;
+            const wrapperRect = wrapper.getBoundingClientRect();
+            // Mouse position relative to the wrapper, minus translation
+            const x = e.clientX - wrapperRect.left; // - translateX
+            const y = e.clientY - wrapperRect.top;
+            
+            points[movePoint].x = x;
+            points[movePoint].y = y;
+            drawLine();
+        } else {
+            translateX = e.clientX - startX;
+            translateY = e.clientY - startY;
+
+            constrainToBounds(wrapper, container);
+            updateTransform(wrapper);
+        }
+        
+        // Constrain movement within bounds
+        
+    });
+
+    document.addEventListener('mouseup', (e) => {
+        isDragging = false;
+        endX = e.clientX - translateX;
+        endY = e.clientY - translateY;
+        if (Math.abs(endX - startX) < 5 && Math.abs(endY - startY) < 5) {
+            handleClick(e);
+        }
+        movePoint = -1;
+    });
+
+    // Add wheel event listener
+    wrapper.addEventListener('wheel', (e) => {
+        e.preventDefault(); // Prevent default scroll behavior
+        
+        // Move image up/down based on wheel direction
+        translateY += e.deltaY;
+        
+        // Constrain movement within bounds
+        constrainToBounds(wrapper, container);
+        updateTransform(wrapper);
+    }, { passive: false }); // Required for preventDefault() to work
+}
+
+function onPointClick(e) {
+    const wrapper = canvas.parentElement;
+    const wrapperRect = wrapper.getBoundingClientRect();
+    // Mouse position relative to the wrapper, minus translation
+    const x = e.clientX - wrapperRect.left; // - translateX
+    const y = e.clientY - wrapperRect.top;
+    
+    if (Math.abs(x - points[0].x) < 5 && Math.abs(y - points[0].y) < 5) {
+        return 0;
+    }
+    if (Math.abs(x - points[1].x) < 5 && Math.abs(y - points[1].y) < 5) {
+        return 1;
+    }
+    return -1;
+}
+
+
+function constrainToBounds(wrapper, container) {
+    const containerRect = container.getBoundingClientRect();
+    const wrapperRect = wrapper.getBoundingClientRect();
+
+    // Calculate bounds
+    const minX = containerRect.width - wrapperRect.width * scale;
+    const minY = containerRect.height - wrapperRect.height * scale;
+
+    // Constrain X
+    if (wrapperRect.width * scale <= containerRect.width) {
+        // If scaled image is smaller than container, center it
+        translateX = (containerRect.width - wrapperRect.width * scale) / 2;
+    } else {
+        // Otherwise, keep it within bounds
+        translateX = Math.min(0, Math.max(minX, translateX));
+    }
+
+    // Constrain Y
+    if (wrapperRect.height * scale <= containerRect.height) {
+        // If scaled image is smaller than container, center it
+        translateY = (containerRect.height - wrapperRect.height * scale) / 2;
+    } else {
+        // Otherwise, keep it within bounds
+        translateY = Math.min(0, Math.max(minY, translateY));
+    }
+}
+
+function updateTransform(wrapper) {
+    wrapper.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
 }
 
 function handleClick(event) {
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    if (points.length == 2) {
+        return;
+    }
+
+    // Get the wrapper element (parent of canvas)
+    const wrapper = canvas.parentElement;
+    const wrapperRect = wrapper.getBoundingClientRect();
+    // Mouse position relative to the wrapper, minus translation
+    const x = event.clientX - wrapperRect.left; // - translateX
+    const y = event.clientY - wrapperRect.top;
     
     points.push({x, y});
-    
-    // Draw circle at click point
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, 2 * Math.PI);
-    ctx.fillStyle = 'red';
-    ctx.fill();
-    
-    if (points.length === 2) {
-        createSliceImage();
-        // Draw line between points
+    drawLine();
+}
+
+function drawLine() {
+    // Clear the drawing canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.putImageData(imageData, 0, 0);
+    for (let i = 0; i < points.length; i++) {
+        ctx.beginPath();
+        ctx.arc(points[i].x, points[i].y, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = 'red';
+        ctx.fill();
+    }
+
+    if (points.length == 2) {
         ctx.beginPath();
         ctx.moveTo(points[0].x, points[0].y);
         ctx.lineTo(points[1].x, points[1].y);
         ctx.strokeStyle = 'red';
         ctx.lineWidth = 2;
         ctx.stroke();
+        createSliceImage();
     }
 }
+
 
 function createSliceImage() {
     const x1 = points[0].x;
@@ -92,31 +247,37 @@ function createSliceImage() {
     const x2 = points[1].x;
     const y2 = points[1].y;
     
-    // Calculate line length
-    const length = Math.sqrt((x2 - x1)**2 + (y2 - y1)**2);
+    // Calculate line length based on canvas coordinates
+    const length = Math.round(Math.sqrt((x2 - x1)**2 + (y2 - y1)**2));
+    let resultCtx;
+
+    if (resultCanvas) {
+        resultCtx = resultCanvas.getContext('2d');
+        resultCtx.clearRect(0, 0, canvas.width, canvas.height);
+    } else {
+        resultCanvas = document.createElement('canvas');
+        resultCanvas.width = length;
+        resultCanvas.height = bandwidth;
+        resultCtx = resultCanvas.getContext('2d');
+    }
     
-    // Create new canvas for result
-    const resultCanvas = document.createElement('canvas');
-    resultCanvas.width = length;
-    resultCanvas.height = bandwidth;
-    const resultCtx = resultCanvas.getContext('2d');
-    
-    // Calculate perpendicular vector
+    // Calculate perpendicular vector (normalized)
     const dx = x2 - x1;
     const dy = y2 - y1;
     const lengthNorm = Math.sqrt(dx*dx + dy*dy);
     const perpx = -dy/lengthNorm;
     const perpy = dx/lengthNorm;
+   
     
-    // Get image data
+    // Get image data from the scaled canvas
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const resultData = resultCtx.createImageData(length, bandwidth);
     
     // For each pixel along the line
     for (let i = 0; i < length; i++) {
         // Calculate base position
-        const x = x1 + (x2 - x1) * i / length;
-        const y = y1 + (y2 - y1) * i / length;
+        const x = x1 + (dx * i / length);
+        const y = y1 + (dy * i / length);
         
         // Sample points across bandwidth
         for (let j = 0; j < bandwidth; j++) {
@@ -124,14 +285,13 @@ function createSliceImage() {
             let sampleX = Math.round(x + perpx * offset);
             let sampleY = Math.round(y + perpy * offset);
             
-            // Ensure within bounds
+            // Ensure within bounds of the scaled canvas
             sampleX = Math.max(0, Math.min(sampleX, canvas.width-1));
             sampleY = Math.max(0, Math.min(sampleY, canvas.height-1));
             
-            // Get pixel from source
+            // Get pixel from source (using scaled coordinates)
             const sourceIndex = (sampleY * canvas.width + sampleX) * 4;
-            const targetIndex = (j * Math.round(length) + i) * 4;
-            
+            const targetIndex = (j * length + i) * 4;            
             // Copy pixel data
             resultData.data[targetIndex] = imgCopy.data[sourceIndex];
             resultData.data[targetIndex + 1] = imgCopy.data[sourceIndex+1];
@@ -139,112 +299,101 @@ function createSliceImage() {
             resultData.data[targetIndex + 3] = imgCopy.data[sourceIndex+3];
         }
     }
-    
+
+
     if (canvasSlice) {
-        canvasSlice.remove();
+        const ctxSlice = canvasSlice.getContext('2d');
+        ctxSlice.clearRect(0, 0, canvas.width, canvas.height);
+        canvasSlice.width = length;
+        canvasSlice.height = bandwidth;
+        ctxSlice.putImageData(resultData, 0, 0);
+    } else {
+        canvasSlice = document.createElement('canvas');
+        canvasSlice.width = length;
+        canvasSlice.height = bandwidth;
+        document.body.appendChild(canvasSlice);
+        const ctxSlice = canvasSlice.getContext('2d');
+        ctxSlice.putImageData(resultData, 0, 0);
     }
 
-    canvasSlice = document.createElement('canvas');
-    canvasSlice.width = length;
-    canvasSlice.height = bandwidth;
-    document.body.appendChild(canvasSlice);
-        
-    ctxSlice = canvasSlice.getContext('2d');
-    ctxSlice.putImageData(resultData, 0, 0);
-
     plotResults(resultData);
-
-    // Put image data and save
-    //resultCtx.putImageData(resultData, 0, 0);
-    
-    // Convert to jpg and download
-    //const link = document.createElement('a');
-    //link.download = 'treeRingsTest.jpg';
-    //link.href = resultCanvas.toDataURL('image/jpeg');
-    //link.click();
-    
-    // Clean up
-    canvas.removeEventListener('click', handleClick);
 }
 
 function plotResults(resultData) {
-    if (canvasPlot) {
-        canvasPlot.remove();
-    }
+    if (!canvasPlot) {
+        const container = document.createElement('div');
+        container.style.display = 'flex';
+        container.style.alignItems = 'start';
+        container.style.gap = '20px';
+        document.body.appendChild(container);
 
-    // Create a container div for the plot and controls
-    const container = document.createElement('div');
-    container.style.display = 'flex';
-    container.style.alignItems = 'start';
-    container.style.gap = '20px';
-    document.body.appendChild(container);
+        // Create canvas and add to container
+        canvasPlot = document.createElement('canvas');
+        canvasPlot.width = 500;
+        canvasPlot.height = 400;
+        container.appendChild(canvasPlot);
 
-    // Create canvas and add to container
-    canvasPlot = document.createElement('canvas');
-    canvasPlot.width = 500;
-    canvasPlot.height = 400;
-    container.appendChild(canvasPlot);
+        // Create controls div
+        const controls = document.createElement('div');
+        controls.style.padding = '20px';
+        container.appendChild(controls);
 
-    // Create controls div
-    const controls = document.createElement('div');
-    controls.style.padding = '20px';
-    container.appendChild(controls);
-
-    // Add window size slider
-    const windowLabel = document.createElement('label');
-    windowLabel.textContent = 'Window Size: ';
-    const windowInput = document.createElement('input');
-    windowInput.type = 'range';
-    windowInput.min = '2';
-    windowInput.max = '20';
-    windowInput.value = windowSize;
-    windowInput.step = '1';
-    const windowValue = document.createElement('span');
-    windowValue.textContent = windowSize;
-    controls.appendChild(windowLabel);
-    controls.appendChild(windowInput);
-    controls.appendChild(windowValue);
-    controls.appendChild(document.createElement('br'));
-    controls.appendChild(document.createElement('br'));
-
-    // Add prominence slider
-    const promLabel = document.createElement('label');
-    promLabel.textContent = 'Prominence: ';
-    const promInput = document.createElement('input');
-    promInput.type = 'range';
-    promInput.min = '1';
-    promInput.max = '50';
-    promInput.value = prominence;
-    promInput.step = '1';
-    const promValue = document.createElement('span');
-    promValue.textContent = prominence;
-    controls.appendChild(promLabel);
-    controls.appendChild(promInput);
-    controls.appendChild(promValue);
-
-    // Update function
-    const updatePlot = () => {
-        windowSize = parseInt(windowInput.value);
-        prominence = parseInt(promInput.value);
+        // Add window size slider
+        const windowLabel = document.createElement('label');
+        windowLabel.textContent = 'Window Size: ';
+        const windowInput = document.createElement('input');
+        windowInput.type = 'range';
+        windowInput.min = '2';
+        windowInput.max = '20';
+        windowInput.value = windowSize;
+        windowInput.step = '1';
+        const windowValue = document.createElement('span');
         windowValue.textContent = windowSize;
-        promValue.textContent = prominence;
-        
-        // Recalculate smoothed data and valleys
-        let smoothedGray = smoothData(meanGray, windowSize);
-        let valleys = findValleysWithProminence(smoothedGray, prominence);
-        
-        // Redraw plot
-        drawPlot(meanGray, smoothedGray, valleys);
-    };
+        controls.appendChild(windowLabel);
+        controls.appendChild(windowInput);
+        controls.appendChild(windowValue);
+        controls.appendChild(document.createElement('br'));
+        controls.appendChild(document.createElement('br'));
 
-    // Add event listeners
-    windowInput.addEventListener('input', updatePlot);
-    promInput.addEventListener('input', updatePlot);
+        // Add prominence slider
+        const promLabel = document.createElement('label');
+        promLabel.textContent = 'Prominence: ';
+        const promInput = document.createElement('input');
+        promInput.type = 'range';
+        promInput.min = '1';
+        promInput.max = '50';
+        promInput.value = prominence;
+        promInput.step = '1';
+        const promValue = document.createElement('span');
+        promValue.textContent = prominence;
+        controls.appendChild(promLabel);
+        controls.appendChild(promInput);
+        controls.appendChild(promValue);
+
+        // Update function
+        const updatePlot = () => {
+            windowSize = parseInt(windowInput.value);
+            prominence = parseInt(promInput.value);
+            windowValue.textContent = windowSize;
+            promValue.textContent = prominence;
+
+            // Recalculate smoothed data and valleys
+            let smoothedGray = smoothData(meanGray, windowSize);
+            let valleys = findValleysWithProminence(smoothedGray, prominence);
+
+            // Redraw plot
+            drawPlot(meanGray, smoothedGray, valleys);
+        };
+        
+        windowInput.addEventListener('input', updatePlot);
+        promInput.addEventListener('input', updatePlot);
+
+    }
 
     ctxPlot = canvasPlot.getContext('2d');
 
     // Calculate initial values
-    let meanGray = [];
+    meanGray = [];
     for (let i = 0; i < resultData.width; i++) {
         let sumGray = 0;
         for (let j = 0; j < resultData.height; j++) {
@@ -260,6 +409,8 @@ function plotResults(resultData) {
     // Separate drawing function
     function drawPlot(meanGray, smoothedGray, valleys) {
         // Clear previous plot
+        console.log("meanGray", meanGray);
+
         ctxPlot.clearRect(0, 0, canvasPlot.width, canvasPlot.height);
 
         // Find min and max values for scaling
