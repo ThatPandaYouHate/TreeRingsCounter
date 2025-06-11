@@ -12,7 +12,7 @@ let imageData;
 let imgCopy;
 let windowSize = 4;
 let prominence = 7;
-const bandwidth = 50;
+const bandwidth = 30;
 let scale = 1;
 let isDragging = false;
 let startX, startY, translateX = 0, translateY = 0;
@@ -50,13 +50,16 @@ function loadImage(imgSource) {
         container.className = 'canvas-container';
         const wrapper = document.createElement('div');
         wrapper.className = 'canvas-wrapper';
-        
+
         canvas = document.createElement('canvas');
         canvasDraw = document.createElement('canvas');
-        const targetWidth = window.innerWidth * 0.5;
+        const targetWidth = window.innerWidth * 0.8;
         const aspectRatio = img.height / img.width;
         const targetHeight = targetWidth * aspectRatio;
-        
+        console.log(window.innerWidth);
+
+
+
         canvas.width = targetWidth;
         canvas.height = targetHeight;
 
@@ -68,6 +71,8 @@ function loadImage(imgSource) {
         //wrapper.appendChild(canvasDraw);
         container.appendChild(wrapper);
         document.body.appendChild(container);
+
+        
         
         ctx = canvas.getContext('2d');
         ctxDraw = canvasDraw.getContext('2d');
@@ -320,12 +325,23 @@ function createSliceImage() {
 }
 
 function plotResults(resultData) {
+    // Get the sidebar element
+    const sidebar = document.getElementById('sidebar');
+    let container;
+
     if (!canvasPlot) {
-        const container = document.createElement('div');
+        // Create a container for plot and controls
+        container = document.createElement('div');
         container.style.display = 'flex';
+        container.style.flexDirection = 'column';
         container.style.alignItems = 'start';
-        container.style.gap = '20px';
-        document.body.appendChild(container);
+        container.style.gap = '10px';
+        container.style.padding = '20px 0';
+        // Remove any previous plot container in sidebar
+        const oldContainer = sidebar.querySelector('.plot-sidebar-container');
+        if (oldContainer) oldContainer.remove();
+        container.className = 'plot-sidebar-container';
+        sidebar.appendChild(container);
 
         // Create canvas and add to container
         canvasPlot = document.createElement('canvas');
@@ -335,40 +351,55 @@ function plotResults(resultData) {
 
         // Create controls div
         const controls = document.createElement('div');
-        controls.style.padding = '20px';
+        controls.style.padding = '20px 0 0 0';
         container.appendChild(controls);
 
         // Add window size slider
+        const windowSliderContainer = document.createElement('div');
+        windowSliderContainer.className = 'slider-container';
         const windowLabel = document.createElement('label');
-        windowLabel.textContent = 'Window Size: ';
+        windowLabel.textContent = 'Window Size';
+        windowLabel.className = 'slider-label';
+        windowSliderContainer.appendChild(windowLabel);
+        const windowSliderRow = document.createElement('div');
+        windowSliderRow.className = 'slider-row';
+        const windowValue = document.createElement('span');
+        windowValue.textContent = windowSize;
+        windowValue.className = 'slider-value';
         const windowInput = document.createElement('input');
         windowInput.type = 'range';
         windowInput.min = '2';
         windowInput.max = '20';
         windowInput.value = windowSize;
         windowInput.step = '1';
-        const windowValue = document.createElement('span');
-        windowValue.textContent = windowSize;
-        controls.appendChild(windowLabel);
-        controls.appendChild(windowInput);
-        controls.appendChild(windowValue);
-        controls.appendChild(document.createElement('br'));
+        windowSliderRow.appendChild(windowValue);
+        windowSliderRow.appendChild(windowInput);
+        windowSliderContainer.appendChild(windowSliderRow);
+        controls.appendChild(windowSliderContainer);
         controls.appendChild(document.createElement('br'));
 
         // Add prominence slider
+        const promSliderContainer = document.createElement('div');
+        promSliderContainer.className = 'slider-container';
         const promLabel = document.createElement('label');
-        promLabel.textContent = 'Prominence: ';
+        promLabel.textContent = 'Prominence';
+        promLabel.className = 'slider-label';
+        promSliderContainer.appendChild(promLabel);
+        const promSliderRow = document.createElement('div');
+        promSliderRow.className = 'slider-row';
+        const promValue = document.createElement('span');
+        promValue.textContent = prominence;
+        promValue.className = 'slider-value';
         const promInput = document.createElement('input');
         promInput.type = 'range';
         promInput.min = '1';
         promInput.max = '50';
         promInput.value = prominence;
         promInput.step = '1';
-        const promValue = document.createElement('span');
-        promValue.textContent = prominence;
-        controls.appendChild(promLabel);
-        controls.appendChild(promInput);
-        controls.appendChild(promValue);
+        promSliderRow.appendChild(promValue);
+        promSliderRow.appendChild(promInput);
+        promSliderContainer.appendChild(promSliderRow);
+        controls.appendChild(promSliderContainer);
 
         // Update function
         const updatePlot = () => {
@@ -384,10 +415,12 @@ function plotResults(resultData) {
             // Redraw plot
             drawPlot(meanGray, smoothedGray, valleys);
         };
-        
+
         windowInput.addEventListener('input', updatePlot);
         promInput.addEventListener('input', updatePlot);
-
+    } else {
+        // If already created, just get the container
+        container = sidebar.querySelector('.plot-sidebar-container');
     }
 
     ctxPlot = canvasPlot.getContext('2d');
@@ -409,8 +442,6 @@ function plotResults(resultData) {
     // Separate drawing function
     function drawPlot(meanGray, smoothedGray, valleys) {
         // Clear previous plot
-        console.log("meanGray", meanGray);
-
         ctxPlot.clearRect(0, 0, canvasPlot.width, canvasPlot.height);
 
         // Find min and max values for scaling
@@ -497,13 +528,11 @@ function plotResults(resultData) {
         }
 
         // Update valley count
-        if (document.querySelector('.valley-count')) {
-            document.querySelector('.valley-count').remove();
-        }
+        let oldValleyText = document.body.querySelector('.valley-count');
+        if (oldValleyText) oldValleyText.remove();
         const valleyText = document.createElement('p');
         valleyText.className = 'valley-count';
-        valleyText.textContent = `Number of valleys detected: ${valleys.length}`;
-        valleyText.style.textAlign = 'center';
+        valleyText.textContent = `${valleys.length}`;
         document.body.appendChild(valleyText);
     }
 

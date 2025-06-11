@@ -40,17 +40,153 @@
             background-color: #45a049;
         }
         .canvas-container {
-            width: 50vw;
-            height: 60vh;
+            width: 80vw;
+            height: 70vh;
             border: 2px solid #ccc;
             overflow: hidden;
             position: relative;
-            margin: 20px;
+            margin: 40px;
+            margin-bottom: 10px;
         }
         .canvas-wrapper {
             position: absolute;
             cursor: move;
             transform-origin: 0 0;
+        }
+        #hamburger-menu {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 1001;
+        }
+        .hamburger-icon {
+            width: 25px;
+            height: 32px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1002;
+        }
+        .hamburger-icon span {
+            display: block;
+            height: 4px;
+            width: 100%;
+            background: #333;
+            margin: 3px 0;
+            border-radius: 2px;
+            transition: 0.3s;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: -80vw;
+            width: 80vw;
+            height: 100vh;
+            background: #fff;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+            z-index: 1001;
+            transition: left 0.3s;
+            overflow-y: auto;
+        }
+        .sidebar.open {
+            left: 0;
+        }
+        .sidebar ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .sidebar ul li {
+            margin: 24px 0;
+            text-align: left;
+            padding-left: 24px;
+        }
+        .sidebar ul li a {
+            color: #333;
+            text-decoration: none;
+            font-size: 18px;
+            transition: color 0.2s;
+        }
+        .sidebar ul li a:hover {
+            color: #4CAF50;
+        }
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        .sidebar-overlay.open {
+            display: block;
+        }
+        .plot-sidebar-container {
+            width: 100%;
+        }
+        .plot-sidebar-container canvas {
+            width: 90% !important;
+            max-width: 520px;
+            height: auto !important;
+            display: block;
+            margin: 0 auto;
+        }
+        @media (max-width: 600px) {
+            .sidebar {
+                width: 80vw;
+                min-width: 0;
+                left: -100vw;
+            }
+            .sidebar.open {
+                left: 0;
+            }
+            .plot-sidebar-container canvas {
+                max-width: 96vw;
+            }
+        }
+        .slider-container {
+            width: 100%;
+            margin-bottom: 18px;
+        }
+        .slider-label {
+            display: block;
+            text-align: center;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+        }
+        .slider-value {
+            min-width: 32px;
+            text-align: right;
+            font-family: monospace;
+            font-size: 1.1em;
+        }
+        .slider-row input[type="range"] {
+            flex: 1;
+            margin-left: 0;
+        }
+        .valley-count {
+            position: fixed;
+            top: 18px;
+            right: 24px;
+            background: #fff;
+            color: #222;
+            font-weight: bold;
+            font-size: 1.15em;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            padding: 8px 18px;
+            z-index: 2000;
+            margin: 0;
+            text-align: right;
         }
     </style>
 </head>
@@ -60,7 +196,38 @@
         <label for="imageUpload" class="upload-btn">Choose Image</label>
     </div>
     
+    <!-- Hamburger Menu -->
+    <div id="hamburger-menu">
+        <div class="hamburger-icon" id="hamburger-icon">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+        <nav class="sidebar" id="sidebar">
+        </nav>
+        <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    </div>
+    
     <!-- Load the JavaScript file -->
     <script src="TreeRings.js"></script>
+    <script>
+    // Hamburger menu logic
+    const hamburgerIcon = document.getElementById('hamburger-icon');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+    function toggleSidebar() {
+        sidebar.classList.toggle('open');
+        sidebarOverlay.classList.toggle('open');
+    }
+
+    hamburgerIcon.addEventListener('click', toggleSidebar);
+    sidebarOverlay.addEventListener('click', toggleSidebar);
+
+    // Optional: Close sidebar when a menu link is clicked
+    document.querySelectorAll('#sidebar a').forEach(link => {
+        link.addEventListener('click', toggleSidebar);
+    });
+    </script>
 </body>
 </html>
