@@ -12,12 +12,14 @@ let imageData;
 let imgCopy;
 let windowSize = 4;
 let prominence = 7;
-const bandwidth = 30;
+const bandwidth = 100;
 let scale = 1;
 let isDragging = false;
 let startX, startY, translateX = 0, translateY = 0;
 let movePoint = -1;
 let meanGray = [];
+let dotSize = 20;
+let lineWidth = 10;
 
 // Setup file input listener
 document.getElementById('imageUpload').addEventListener('change', function(e) {
@@ -53,18 +55,29 @@ function loadImage(imgSource) {
 
         canvas = document.createElement('canvas');
         canvasDraw = document.createElement('canvas');
-        const targetWidth = window.innerWidth * 0.8;
+        const targetWidth = window.innerWidth * 0.9;
         const aspectRatio = img.height / img.width;
         const targetHeight = targetWidth * aspectRatio;
-        console.log(window.innerWidth);
+        console.log(aspectRatio);
 
+        
 
+        // Set canvas pixel size to image's natural size
+        canvas.width = img.width;
+        canvas.height = img.height;
 
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-
+        // Set canvas display size to fit the layout (CSS)
+        canvas.style.width = targetWidth + 'px';
+        canvas.style.height = targetHeight + 'px';
+        
+        // Create a canvas for drawing
         canvasDraw.width = targetWidth;
         canvasDraw.height = targetHeight;
+        
+        // Calculate container height based on canvas height, but never more than 70vh
+        const maxContainerHeight = window.innerHeight * 0.7;
+        const containerHeight = Math.min(targetHeight, maxContainerHeight);
+        container.style.height = containerHeight + 'px';
         
         // Append elements
         wrapper.appendChild(canvas);
@@ -76,7 +89,7 @@ function loadImage(imgSource) {
         
         ctx = canvas.getContext('2d');
         ctxDraw = canvasDraw.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, img.width, img.height);
         
         // Convert to grayscale
         imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -117,9 +130,11 @@ function setupInteractions(wrapper, container) {
         if (movePoint != -1 ) {
             const wrapper = canvas.parentElement;
             const wrapperRect = wrapper.getBoundingClientRect();
-            // Mouse position relative to the wrapper, minus translation
-            const x = e.clientX - wrapperRect.left; // - translateX
-            const y = e.clientY - wrapperRect.top;
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
             
             points[movePoint].x = x;
             points[movePoint].y = y;
@@ -146,6 +161,62 @@ function setupInteractions(wrapper, container) {
         movePoint = -1;
     });
 
+    // Touch events for mobile devices
+    wrapper.addEventListener('touchstart', (e) => {
+        e.preventDefault(); // Prevent default touch behavior
+        isDragging = true;
+        const touch = e.touches[0];
+        startX = touch.clientX - translateX;
+        startY = touch.clientY - translateY;
+
+        if (points.length == 2) {
+            movePoint = onPointClickTouch(e);
+        }
+    });
+
+    document.addEventListener('touchmove', (e) => {
+        e.preventDefault(); // Prevent default touch behavior
+        if (!isDragging) return;
+        if (movePoint != -1 ) {
+            const wrapper = canvas.parentElement;
+            const wrapperRect = wrapper.getBoundingClientRect();
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const touch = e.touches[0];
+            const x = (touch.clientX - rect.left) * scaleX;
+            const y = (touch.clientY - rect.top) * scaleY;
+            
+            points[movePoint].x = x;
+            points[movePoint].y = y;
+            drawLine();
+        } else {
+            const touch = e.touches[0];
+            translateX = touch.clientX - startX;
+            translateY = touch.clientY - startY;
+
+            constrainToBounds(wrapper, container);
+            updateTransform(wrapper);
+        }
+        
+        // Constrain movement within bounds
+        
+    });
+
+    document.addEventListener('touchend', (e) => {
+        e.preventDefault(); // Prevent default touch behavior
+        isDragging = false;
+        if (e.changedTouches.length > 0) {
+            const touch = e.changedTouches[0];
+            endX = touch.clientX - translateX;
+            endY = touch.clientY - translateY;
+            if (Math.abs(endX - startX) < 5 && Math.abs(endY - startY) < 5) {
+                handleClickTouch(e);
+            }
+        }
+        movePoint = -1;
+    });
+
     // Add wheel event listener
     wrapper.addEventListener('wheel', (e) => {
         e.preventDefault(); // Prevent default scroll behavior
@@ -162,19 +233,39 @@ function setupInteractions(wrapper, container) {
 function onPointClick(e) {
     const wrapper = canvas.parentElement;
     const wrapperRect = wrapper.getBoundingClientRect();
-    // Mouse position relative to the wrapper, minus translation
-    const x = e.clientX - wrapperRect.left; // - translateX
-    const y = e.clientY - wrapperRect.top;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
     
-    if (Math.abs(x - points[0].x) < 5 && Math.abs(y - points[0].y) < 5) {
+    if (Math.abs(x - points[0].x) < dotSize && Math.abs(y - points[0].y) < dotSize) {
         return 0;
     }
-    if (Math.abs(x - points[1].x) < 5 && Math.abs(y - points[1].y) < 5) {
+    if (Math.abs(x - points[1].x) < dotSize && Math.abs(y - points[1].y) < dotSize) {
         return 1;
     }
     return -1;
 }
 
+function onPointClickTouch(e) {
+    const wrapper = canvas.parentElement;
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const touch = e.touches[0];
+    const x = (touch.clientX - rect.left) * scaleX;
+    const y = (touch.clientY - rect.top) * scaleY;
+    
+    if (Math.abs(x - points[0].x) < dotSize && Math.abs(y - points[0].y) < dotSize) {
+        return 0;
+    }
+    if (Math.abs(x - points[1].x) < dotSize && Math.abs(y - points[1].y) < dotSize) {
+        return 1;
+    }
+    return -1;
+}
 
 function constrainToBounds(wrapper, container) {
     const containerRect = container.getBoundingClientRect();
@@ -215,9 +306,30 @@ function handleClick(event) {
     // Get the wrapper element (parent of canvas)
     const wrapper = canvas.parentElement;
     const wrapperRect = wrapper.getBoundingClientRect();
-    // Mouse position relative to the wrapper, minus translation
-    const x = event.clientX - wrapperRect.left; // - translateX
-    const y = event.clientY - wrapperRect.top;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (event.clientX - rect.left) * scaleX;
+    const y = (event.clientY - rect.top) * scaleY;
+    
+    points.push({x, y});
+    drawLine();
+}
+
+function handleClickTouch(event) {
+    if (points.length == 2) {
+        return;
+    }
+
+    // Get the wrapper element (parent of canvas)
+    const wrapper = canvas.parentElement;
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const touch = event.changedTouches[0];
+    const x = (touch.clientX - rect.left) * scaleX;
+    const y = (touch.clientY - rect.top) * scaleY;
     
     points.push({x, y});
     drawLine();
@@ -229,7 +341,7 @@ function drawLine() {
     ctx.putImageData(imageData, 0, 0);
     for (let i = 0; i < points.length; i++) {
         ctx.beginPath();
-        ctx.arc(points[i].x, points[i].y, 5, 0, 2 * Math.PI);
+        ctx.arc(points[i].x, points[i].y, dotSize, 0, 2 * Math.PI);
         ctx.fillStyle = 'red';
         ctx.fill();
     }
@@ -239,7 +351,7 @@ function drawLine() {
         ctx.moveTo(points[0].x, points[0].y);
         ctx.lineTo(points[1].x, points[1].y);
         ctx.strokeStyle = 'red';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = lineWidth;
         ctx.stroke();
         createSliceImage();
     }
@@ -320,6 +432,12 @@ function createSliceImage() {
         const ctxSlice = canvasSlice.getContext('2d');
         ctxSlice.putImageData(resultData, 0, 0);
     }
+
+    // --- Scale the displayed slice to fit 10vh in height, and scale width accordingly ---
+    const targetDisplayHeight = window.innerHeight * 0.025;
+    const scaleFactor = targetDisplayHeight / bandwidth;
+    canvasSlice.style.height = targetDisplayHeight + 'px';
+    canvasSlice.style.width = (length * scaleFactor) + 'px';
 
     plotResults(resultData);
 }
@@ -463,7 +581,7 @@ function plotResults(resultData) {
 
         // Plot the original data
         ctxPlot.beginPath();
-        ctxPlot.strokeStyle = '#0000FF';
+        ctxPlot.strokeStyle = '#000000';
         for (let i = 0; i < meanGray.length; i++) {
             const x = padding + (i * (canvasPlot.width - 2 * padding) / meanGray.length);
             const y = canvasPlot.height - padding - ((meanGray[i] - minGray) / range * plotHeight);
@@ -477,7 +595,7 @@ function plotResults(resultData) {
 
         // Plot the smoothed data
         ctxPlot.beginPath();
-        ctxPlot.strokeStyle = '#FF6600';
+        ctxPlot.strokeStyle = '#00FFFF';
         for (let i = 0; i < smoothedGray.length; i++) {
             const x = padding + (i * (canvasPlot.width - 2 * padding) / smoothedGray.length);
             const y = canvasPlot.height - padding - ((smoothedGray[i] - minGray) / range * plotHeight);
@@ -505,16 +623,16 @@ function plotResults(resultData) {
         
         // Redraw the original points and line
         ctx.beginPath();
-        ctx.arc(points[0].x, points[0].y, 5, 0, 2 * Math.PI);
-        ctx.arc(points[1].x, points[1].y, 5, 0, 2 * Math.PI);
-        ctx.fillStyle = 'red';
+        ctx.arc(points[0].x, points[0].y, dotSize, 0, 2 * Math.PI);
+        ctx.arc(points[1].x, points[1].y, dotSize, 0, 2 * Math.PI);
+        ctx.fillStyle = '#FF0000';
         ctx.fill();
         
         ctx.beginPath();
         ctx.moveTo(points[0].x, points[0].y);
         ctx.lineTo(points[1].x, points[1].y);
-        ctx.strokeStyle = 'red';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = lineWidth;
         ctx.stroke();
 
         // Draw valley points on original image
@@ -523,7 +641,7 @@ function plotResults(resultData) {
             const x = points[0].x + (valley.index * (points[1].x - points[0].x) / meanGray.length);
             const y = points[0].y + (valley.index * (points[1].y - points[0].y) / meanGray.length);
             ctx.beginPath();
-            ctx.arc(x, y, 3, 0, 2 * Math.PI);
+            ctx.arc(x, y, dotSize*0.5, 0, 2 * Math.PI);
             ctx.fill();
         }
 
