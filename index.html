@@ -220,12 +220,27 @@
         sidebarOverlay.classList.toggle('open');
     }
 
+    // Mouse events
     hamburgerIcon.addEventListener('click', toggleSidebar);
     sidebarOverlay.addEventListener('click', toggleSidebar);
+
+    // Touch events for mobile devices
+    hamburgerIcon.addEventListener('touchstart', function(e) {
+        e.preventDefault(); // Prevent default touch behavior
+        toggleSidebar();
+    });
+    sidebarOverlay.addEventListener('touchstart', function(e) {
+        e.preventDefault(); // Prevent default touch behavior
+        toggleSidebar();
+    });
 
     // Optional: Close sidebar when a menu link is clicked
     document.querySelectorAll('#sidebar a').forEach(link => {
         link.addEventListener('click', toggleSidebar);
+        link.addEventListener('touchstart', function(e) {
+            e.preventDefault(); // Prevent default touch behavior
+            toggleSidebar();
+        });
     });
     </script>
 </body>

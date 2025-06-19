@@ -239,10 +239,10 @@ function onPointClick(e) {
     const x = (e.clientX - rect.left) * scaleX;
     const y = (e.clientY - rect.top) * scaleY;
     
-    if (Math.abs(x - points[0].x) < dotSize && Math.abs(y - points[0].y) < dotSize) {
+    if (Math.abs(x - points[0].x) < dotSize*3 && Math.abs(y - points[0].y) < dotSize*3) {
         return 0;
     }
-    if (Math.abs(x - points[1].x) < dotSize && Math.abs(y - points[1].y) < dotSize) {
+    if (Math.abs(x - points[1].x) < dotSize*3 && Math.abs(y - points[1].y) < dotSize*3) {
         return 1;
     }
     return -1;
@@ -258,10 +258,10 @@ function onPointClickTouch(e) {
     const x = (touch.clientX - rect.left) * scaleX;
     const y = (touch.clientY - rect.top) * scaleY;
     
-    if (Math.abs(x - points[0].x) < dotSize && Math.abs(y - points[0].y) < dotSize) {
+    if (Math.abs(x - points[0].x) < dotSize*3 && Math.abs(y - points[0].y) < dotSize*3) {
         return 0;
     }
-    if (Math.abs(x - points[1].x) < dotSize && Math.abs(y - points[1].y) < dotSize) {
+    if (Math.abs(x - points[1].x) < dotSize*3 && Math.abs(y - points[1].y) < dotSize*3) {
         return 1;
     }
     return -1;
@@ -342,8 +342,14 @@ function drawLine() {
     for (let i = 0; i < points.length; i++) {
         ctx.beginPath();
         ctx.arc(points[i].x, points[i].y, dotSize, 0, 2 * Math.PI);
-        ctx.fillStyle = 'red';
+        ctx.fillStyle = '#FF0000';
         ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(points[i].x, points[i].y, dotSize*3, 0, 2 * Math.PI);
+        ctx.lineWidth = lineWidth;
+        ctx.strokeStyle = '#FF0000';
+        ctx.stroke();
     }
 
     if (points.length == 2) {
@@ -627,6 +633,17 @@ function plotResults(resultData) {
         ctx.arc(points[1].x, points[1].y, dotSize, 0, 2 * Math.PI);
         ctx.fillStyle = '#FF0000';
         ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(points[0].x, points[0].y, dotSize*3, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#FF0000';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(points[1].x, points[1].y, dotSize*3, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#FF0000';
+        ctx.stroke();
+        
         
         ctx.beginPath();
         ctx.moveTo(points[0].x, points[0].y);
