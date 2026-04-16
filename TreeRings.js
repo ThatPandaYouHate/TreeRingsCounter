@@ -486,7 +486,7 @@ function drawPlot(raw, smoothed, valleys) {
         const sCtx = canvasSlice.getContext('2d');
         sCtx.putImageData(sliceImageData, 0, 0);
         const midY = Math.floor(bandwidth / 2);
-        const r = Math.max(3, Math.min(10, Math.floor(bandwidth / 14)));
+        const r = Math.max(5, Math.min(14, Math.floor(bandwidth / 10)));
         sCtx.fillStyle = '#ff3b30';
         for (const v of valleys) {
             sCtx.beginPath();
