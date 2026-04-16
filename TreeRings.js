@@ -1,358 +1,351 @@
-// Canvas and context variables
-let canvas;
-let canvasSlice;
-let canvasPlot; 
+// State
+let canvas, ctx;
+let canvasSlice, canvasPlot, ctxPlot;
 let resultCanvas;
-let ctx;
-let ctxSlice;
-let ctxPlot;
 let points = [];
-let img;
-let imageData;
-let imgCopy;
+let img, imageData, imgCopy;
 let windowSize = 4;
 let prominence = 7;
 const bandwidth = 100;
+const dotSize = 20;
+const lineWidth = 10;
+
+// Pan & zoom state
 let scale = 1;
 let isDragging = false;
 let startX, startY, translateX = 0, translateY = 0;
+let canvasDisplayWidth, canvasDisplayHeight;
 let movePoint = -1;
-let meanGray = [];
-let dotSize = 20;
-let lineWidth = 10;
+let initialPinchDist = 0;
+let initialPinchScale = 1;
 
-// Setup file input listener
-document.getElementById('imageUpload').addEventListener('change', function(e) {
+// Analysis state
+let meanGray = [];
+let sliceImageData = null;
+
+// DOM references
+const uploadContainer = document.getElementById('upload-container');
+const instructionsBar = document.getElementById('instructions');
+const canvasHost = document.getElementById('canvas-host');
+const resultsSection = document.getElementById('results-section');
+const ringCountEl = document.getElementById('ring-count');
+const sliceContainer = document.getElementById('slice-container');
+const plotContainer = document.getElementById('plot-container');
+const windowSlider = document.getElementById('window-slider');
+const windowValueEl = document.getElementById('window-value');
+const prominenceSlider = document.getElementById('prominence-slider');
+const prominenceValueEl = document.getElementById('prominence-value');
+const resetBtn = document.getElementById('reset-btn');
+const imageUpload = document.getElementById('imageUpload');
+
+// --- Event wiring ---
+
+imageUpload.addEventListener('change', function (e) {
     const file = e.target.files[0];
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = function(event) {
-            loadImage(event.target.result);
-        };
-        reader.readAsDataURL(file);
-    }
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => loadImage(ev.target.result);
+    reader.readAsDataURL(file);
 });
 
-// Load and setup image
-function loadImage(imgSource) {
-    // Hide the upload container after image is loaded
-    
-    
-    // Clear previous canvas if it exists
+windowSlider.addEventListener('input', onSliderChange);
+prominenceSlider.addEventListener('input', onSliderChange);
+resetBtn.addEventListener('click', resetAnalysis);
+
+// --- Core functions ---
+
+function loadImage(src) {
     if (canvas) {
-        canvas.remove();
-        points = [];
+        canvas.parentElement?.parentElement?.remove();
+        resetState();
     }
+    resultsSection.style.display = 'none';
 
     img = new Image();
-    img.src = imgSource;
-    img.onload = function() {
-        // Create container and wrapper
+    img.src = src;
+    img.onerror = () => {
+        alert('Kunde inte ladda bilden. Försök med en annan fil.');
+        uploadContainer.style.display = 'flex';
+    };
+    img.onload = function () {
         const container = document.createElement('div');
         container.className = 'canvas-container';
         const wrapper = document.createElement('div');
         wrapper.className = 'canvas-wrapper';
 
         canvas = document.createElement('canvas');
-        canvasDraw = document.createElement('canvas');
-        const targetWidth = window.innerWidth * 0.9;
+        canvasDisplayWidth = window.innerWidth;
         const aspectRatio = img.height / img.width;
-        const targetHeight = targetWidth * aspectRatio;
-        console.log(aspectRatio);
+        canvasDisplayHeight = canvasDisplayWidth * aspectRatio;
 
-        
-
-        // Set canvas pixel size to image's natural size
         canvas.width = img.width;
         canvas.height = img.height;
+        canvas.style.width = canvasDisplayWidth + 'px';
+        canvas.style.height = canvasDisplayHeight + 'px';
 
-        // Set canvas display size to fit the layout (CSS)
-        canvas.style.width = targetWidth + 'px';
-        canvas.style.height = targetHeight + 'px';
-        
-        // Create a canvas for drawing
-        canvasDraw.width = targetWidth;
-        canvasDraw.height = targetHeight;
-        
-        // Calculate container height based on canvas height, but never more than 70vh
-        const maxContainerHeight = window.innerHeight * 0.7;
-        const containerHeight = Math.min(targetHeight, maxContainerHeight);
-        container.style.height = containerHeight + 'px';
-        
-        // Append elements
+        const maxH = window.innerHeight * 0.7;
+        container.style.height = Math.min(canvasDisplayHeight, maxH) + 'px';
+
         wrapper.appendChild(canvas);
-        //wrapper.appendChild(canvasDraw);
         container.appendChild(wrapper);
-        document.body.appendChild(container);
+        canvasHost.appendChild(container);
 
-        
-        
         ctx = canvas.getContext('2d');
-        ctxDraw = canvasDraw.getContext('2d');
         ctx.drawImage(img, 0, 0, img.width, img.height);
-        
-        // Convert to grayscale
+
         imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        let data = imageData.data;
-        for (let i = 0; i < data.length; i += 4) {
-            let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-            data[i] = data[i + 1] = data[i + 2] = gray;
+        const d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+            const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+            d[i] = d[i + 1] = d[i + 2] = gray;
         }
         ctx.putImageData(imageData, 0, 0);
-        
         imgCopy = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        
-        // Add event listeners for dragging and zooming
-        setupInteractions(wrapper, container);
-        
-        console.log("remove upload container");
-        document.getElementById('upload-container').style.display = 'none';
-        
-    };
 
-    
+        setupInteractions(wrapper, container);
+        uploadContainer.style.display = 'none';
+        setInstruction('tap1');
+    };
+}
+
+function resetState() {
+    points = [];
+    movePoint = -1;
+    meanGray = [];
+    sliceImageData = null;
+    canvasSlice = null;
+    canvasPlot = null;
+    ctxPlot = null;
+    resultCanvas = null;
+    scale = 1;
+    translateX = 0;
+    translateY = 0;
+}
+
+function resetAnalysis() {
+    if (canvas) {
+        canvas.parentElement?.parentElement?.remove();
+    }
+    canvas = null;
+    ctx = null;
+    img = null;
+    imageData = null;
+    imgCopy = null;
+
+    points = [];
+    movePoint = -1;
+    meanGray = [];
+    sliceImageData = null;
+    if (canvasSlice) { canvasSlice.remove(); canvasSlice = null; }
+    if (canvasPlot) { canvasPlot.remove(); canvasPlot = null; ctxPlot = null; }
+    resultCanvas = null;
+    scale = 1;
+    translateX = 0;
+    translateY = 0;
+
+    resultsSection.style.display = 'none';
+    ringCountEl.textContent = '\u2014';
+
+    uploadContainer.style.display = 'flex';
+    instructionsBar.style.display = 'none';
+    instructionsBar.textContent = '';
+
+    imageUpload.value = '';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function setInstruction(step) {
+    instructionsBar.style.display = 'block';
+    const messages = {
+        tap1: 'Tryck på bilden för att placera första punkten',
+        tap2: 'Tryck för att placera andra punkten',
+        done: 'Dra i punkterna för att justera — scrolla ner för resultat',
+    };
+    instructionsBar.textContent = messages[step] || '';
+}
+
+// --- Interaction setup ---
+
+function getCanvasCoords(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        x: (clientX - rect.left) * (canvas.width / rect.width),
+        y: (clientY - rect.top) * (canvas.height / rect.height),
+    };
+}
+
+function hitTestPoints(cx, cy) {
+    const hitRadius = dotSize * 3;
+    for (let i = 0; i < points.length; i++) {
+        if (Math.abs(cx - points[i].x) < hitRadius && Math.abs(cy - points[i].y) < hitRadius) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+function addPoint(cx, cy) {
+    if (points.length >= 2) return;
+    points.push({ x: cx, y: cy });
+    drawLine();
+    setInstruction(points.length === 1 ? 'tap2' : 'done');
 }
 
 function setupInteractions(wrapper, container) {
-    // Mouse drag
+    // --- Mouse ---
     wrapper.addEventListener('mousedown', (e) => {
         isDragging = true;
         startX = e.clientX - translateX;
         startY = e.clientY - translateY;
-
-        if (points.length == 2) {
-            movePoint = onPointClick(e);
+        if (points.length === 2) {
+            const c = getCanvasCoords(e.clientX, e.clientY);
+            movePoint = hitTestPoints(c.x, c.y);
         }
     });
 
     document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
-        if (movePoint != -1 ) {
-            const wrapper = canvas.parentElement;
-            const wrapperRect = wrapper.getBoundingClientRect();
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = (e.clientX - rect.left) * scaleX;
-            const y = (e.clientY - rect.top) * scaleY;
-            
-            points[movePoint].x = x;
-            points[movePoint].y = y;
+        if (movePoint !== -1) {
+            const c = getCanvasCoords(e.clientX, e.clientY);
+            points[movePoint] = c;
             drawLine();
         } else {
             translateX = e.clientX - startX;
             translateY = e.clientY - startY;
-
-            constrainToBounds(wrapper, container);
-            updateTransform(wrapper);
+            constrainToBounds(container);
+            applyTransform(wrapper);
         }
-        
-        // Constrain movement within bounds
-        
     });
 
     document.addEventListener('mouseup', (e) => {
+        if (!isDragging) return;
         isDragging = false;
-        endX = e.clientX - translateX;
-        endY = e.clientY - translateY;
+        const endX = e.clientX - translateX;
+        const endY = e.clientY - translateY;
         if (Math.abs(endX - startX) < 5 && Math.abs(endY - startY) < 5) {
-            handleClick(e);
+            const c = getCanvasCoords(e.clientX, e.clientY);
+            addPoint(c.x, c.y);
         }
         movePoint = -1;
     });
 
-    // Touch events for mobile devices
+    // --- Touch ---
     wrapper.addEventListener('touchstart', (e) => {
-        e.preventDefault(); // Prevent default touch behavior
-        isDragging = true;
-        const touch = e.touches[0];
-        startX = touch.clientX - translateX;
-        startY = touch.clientY - translateY;
-
-        if (points.length == 2) {
-            movePoint = onPointClickTouch(e);
+        if (e.touches.length === 2) {
+            isDragging = false;
+            initialPinchDist = pinchDistance(e.touches);
+            initialPinchScale = scale;
+            e.preventDefault();
+            return;
         }
-    });
+        e.preventDefault();
+        isDragging = true;
+        const t = e.touches[0];
+        startX = t.clientX - translateX;
+        startY = t.clientY - translateY;
+        if (points.length === 2) {
+            const c = getCanvasCoords(t.clientX, t.clientY);
+            movePoint = hitTestPoints(c.x, c.y);
+        }
+    }, { passive: false });
 
     document.addEventListener('touchmove', (e) => {
-        e.preventDefault(); // Prevent default touch behavior
+        if (e.touches.length === 2 && initialPinchDist > 0) {
+            e.preventDefault();
+            const d = pinchDistance(e.touches);
+            scale = Math.max(0.5, Math.min(5, initialPinchScale * (d / initialPinchDist)));
+            constrainToBounds(container);
+            applyTransform(wrapper);
+            return;
+        }
         if (!isDragging) return;
-        if (movePoint != -1 ) {
-            const wrapper = canvas.parentElement;
-            const wrapperRect = wrapper.getBoundingClientRect();
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const touch = e.touches[0];
-            const x = (touch.clientX - rect.left) * scaleX;
-            const y = (touch.clientY - rect.top) * scaleY;
-            
-            points[movePoint].x = x;
-            points[movePoint].y = y;
+        e.preventDefault();
+        const t = e.touches[0];
+        if (movePoint !== -1) {
+            const c = getCanvasCoords(t.clientX, t.clientY);
+            points[movePoint] = c;
             drawLine();
         } else {
-            const touch = e.touches[0];
-            translateX = touch.clientX - startX;
-            translateY = touch.clientY - startY;
-
-            constrainToBounds(wrapper, container);
-            updateTransform(wrapper);
+            translateX = t.clientX - startX;
+            translateY = t.clientY - startY;
+            constrainToBounds(container);
+            applyTransform(wrapper);
         }
-        
-        // Constrain movement within bounds
-        
-    });
+    }, { passive: false });
 
     document.addEventListener('touchend', (e) => {
-        e.preventDefault(); // Prevent default touch behavior
+        if (initialPinchDist > 0 && e.touches.length < 2) {
+            initialPinchDist = 0;
+            return;
+        }
         isDragging = false;
-        if (e.changedTouches.length > 0) {
-            const touch = e.changedTouches[0];
-            endX = touch.clientX - translateX;
-            endY = touch.clientY - translateY;
+        if (e.changedTouches && e.changedTouches.length > 0) {
+            const t = e.changedTouches[0];
+            const endX = t.clientX - translateX;
+            const endY = t.clientY - translateY;
             if (Math.abs(endX - startX) < 5 && Math.abs(endY - startY) < 5) {
-                handleClickTouch(e);
+                const c = getCanvasCoords(t.clientX, t.clientY);
+                addPoint(c.x, c.y);
             }
         }
         movePoint = -1;
     });
 
-    // Add wheel event listener
     wrapper.addEventListener('wheel', (e) => {
-        e.preventDefault(); // Prevent default scroll behavior
-        
-        // Move image up/down based on wheel direction
-        translateY += e.deltaY;
-        
-        // Constrain movement within bounds
-        constrainToBounds(wrapper, container);
-        updateTransform(wrapper);
-    }, { passive: false }); // Required for preventDefault() to work
+        e.preventDefault();
+        translateY -= e.deltaY;
+        constrainToBounds(container);
+        applyTransform(wrapper);
+    }, { passive: false });
 }
 
-function onPointClick(e) {
-    const wrapper = canvas.parentElement;
-    const wrapperRect = wrapper.getBoundingClientRect();
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
-    
-    if (Math.abs(x - points[0].x) < dotSize*3 && Math.abs(y - points[0].y) < dotSize*3) {
-        return 0;
-    }
-    if (Math.abs(x - points[1].x) < dotSize*3 && Math.abs(y - points[1].y) < dotSize*3) {
-        return 1;
-    }
-    return -1;
+function pinchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
 }
 
-function onPointClickTouch(e) {
-    const wrapper = canvas.parentElement;
-    const wrapperRect = wrapper.getBoundingClientRect();
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const touch = e.touches[0];
-    const x = (touch.clientX - rect.left) * scaleX;
-    const y = (touch.clientY - rect.top) * scaleY;
-    
-    if (Math.abs(x - points[0].x) < dotSize*3 && Math.abs(y - points[0].y) < dotSize*3) {
-        return 0;
-    }
-    if (Math.abs(x - points[1].x) < dotSize*3 && Math.abs(y - points[1].y) < dotSize*3) {
-        return 1;
-    }
-    return -1;
-}
+function constrainToBounds(container) {
+    const cr = container.getBoundingClientRect();
+    const sw = canvasDisplayWidth * scale;
+    const sh = canvasDisplayHeight * scale;
 
-function constrainToBounds(wrapper, container) {
-    const containerRect = container.getBoundingClientRect();
-    const wrapperRect = wrapper.getBoundingClientRect();
-
-    // Calculate bounds
-    const minX = containerRect.width - wrapperRect.width * scale;
-    const minY = containerRect.height - wrapperRect.height * scale;
-
-    // Constrain X
-    if (wrapperRect.width * scale <= containerRect.width) {
-        // If scaled image is smaller than container, center it
-        translateX = (containerRect.width - wrapperRect.width * scale) / 2;
+    if (sw <= cr.width) {
+        translateX = (cr.width - sw) / 2;
     } else {
-        // Otherwise, keep it within bounds
-        translateX = Math.min(0, Math.max(minX, translateX));
+        translateX = Math.min(0, Math.max(cr.width - sw, translateX));
     }
-
-    // Constrain Y
-    if (wrapperRect.height * scale <= containerRect.height) {
-        // If scaled image is smaller than container, center it
-        translateY = (containerRect.height - wrapperRect.height * scale) / 2;
+    if (sh <= cr.height) {
+        translateY = (cr.height - sh) / 2;
     } else {
-        // Otherwise, keep it within bounds
-        translateY = Math.min(0, Math.max(minY, translateY));
+        translateY = Math.min(0, Math.max(cr.height - sh, translateY));
     }
 }
 
-function updateTransform(wrapper) {
+function applyTransform(wrapper) {
     wrapper.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
 }
 
-function handleClick(event) {
-    if (points.length == 2) {
-        return;
-    }
-
-    // Get the wrapper element (parent of canvas)
-    const wrapper = canvas.parentElement;
-    const wrapperRect = wrapper.getBoundingClientRect();
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const x = (event.clientX - rect.left) * scaleX;
-    const y = (event.clientY - rect.top) * scaleY;
-    
-    points.push({x, y});
-    drawLine();
-}
-
-function handleClickTouch(event) {
-    if (points.length == 2) {
-        return;
-    }
-
-    // Get the wrapper element (parent of canvas)
-    const wrapper = canvas.parentElement;
-    const wrapperRect = wrapper.getBoundingClientRect();
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const touch = event.changedTouches[0];
-    const x = (touch.clientX - rect.left) * scaleX;
-    const y = (touch.clientY - rect.top) * scaleY;
-    
-    points.push({x, y});
-    drawLine();
-}
+// --- Drawing ---
 
 function drawLine() {
-    // Clear the drawing canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.putImageData(imageData, 0, 0);
-    for (let i = 0; i < points.length; i++) {
+    ctx.putImageData(imgCopy, 0, 0);
+
+    for (const p of points) {
         ctx.beginPath();
-        ctx.arc(points[i].x, points[i].y, dotSize, 0, 2 * Math.PI);
+        ctx.arc(p.x, p.y, dotSize, 0, 2 * Math.PI);
         ctx.fillStyle = '#FF0000';
         ctx.fill();
 
         ctx.beginPath();
-        ctx.arc(points[i].x, points[i].y, dotSize*3, 0, 2 * Math.PI);
+        ctx.arc(p.x, p.y, dotSize * 3, 0, 2 * Math.PI);
         ctx.lineWidth = lineWidth;
         ctx.strokeStyle = '#FF0000';
         ctx.stroke();
     }
 
-    if (points.length == 2) {
+    if (points.length === 2) {
         ctx.beginPath();
         ctx.moveTo(points[0].x, points[0].y);
         ctx.lineTo(points[1].x, points[1].y);
@@ -363,371 +356,225 @@ function drawLine() {
     }
 }
 
+// --- Slice extraction & analysis ---
 
 function createSliceImage() {
-    const x1 = points[0].x;
-    const y1 = points[0].y;
-    const x2 = points[1].x;
-    const y2 = points[1].y;
-    
-    // Calculate line length based on canvas coordinates
-    const length = Math.round(Math.sqrt((x2 - x1)**2 + (y2 - y1)**2));
-    let resultCtx;
+    const x1 = points[0].x, y1 = points[0].y;
+    const x2 = points[1].x, y2 = points[1].y;
+    const dx = x2 - x1, dy = y2 - y1;
+    const length = Math.round(Math.sqrt(dx * dx + dy * dy));
+    if (length === 0) return;
 
-    if (resultCanvas) {
-        resultCtx = resultCanvas.getContext('2d');
-        resultCtx.clearRect(0, 0, canvas.width, canvas.height);
-    } else {
-        resultCanvas = document.createElement('canvas');
-        resultCanvas.width = length;
-        resultCanvas.height = bandwidth;
-        resultCtx = resultCanvas.getContext('2d');
-    }
-    
-    // Calculate perpendicular vector (normalized)
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const lengthNorm = Math.sqrt(dx*dx + dy*dy);
-    const perpx = -dy/lengthNorm;
-    const perpy = dx/lengthNorm;
-   
-    
-    // Get image data from the scaled canvas
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const resultData = resultCtx.createImageData(length, bandwidth);
-    
-    // For each pixel along the line
+    const norm = Math.sqrt(dx * dx + dy * dy);
+    const perpx = -dy / norm;
+    const perpy = dx / norm;
+
+    if (!resultCanvas) resultCanvas = document.createElement('canvas');
+    resultCanvas.width = length;
+    resultCanvas.height = bandwidth;
+    const rCtx = resultCanvas.getContext('2d');
+    rCtx.clearRect(0, 0, length, bandwidth);
+    const resultData = rCtx.createImageData(length, bandwidth);
+
     for (let i = 0; i < length; i++) {
-        // Calculate base position
-        const x = x1 + (dx * i / length);
-        const y = y1 + (dy * i / length);
-        
-        // Sample points across bandwidth
+        const bx = x1 + (dx * i / length);
+        const by = y1 + (dy * i / length);
         for (let j = 0; j < bandwidth; j++) {
-            const offset = j - Math.floor(bandwidth/2);
-            let sampleX = Math.round(x + perpx * offset);
-            let sampleY = Math.round(y + perpy * offset);
-            
-            // Ensure within bounds of the scaled canvas
-            sampleX = Math.max(0, Math.min(sampleX, canvas.width-1));
-            sampleY = Math.max(0, Math.min(sampleY, canvas.height-1));
-            
-            // Get pixel from source (using scaled coordinates)
-            const sourceIndex = (sampleY * canvas.width + sampleX) * 4;
-            const targetIndex = (j * length + i) * 4;            
-            // Copy pixel data
-            resultData.data[targetIndex] = imgCopy.data[sourceIndex];
-            resultData.data[targetIndex + 1] = imgCopy.data[sourceIndex+1];
-            resultData.data[targetIndex + 2] = imgCopy.data[sourceIndex+2];
-            resultData.data[targetIndex + 3] = imgCopy.data[sourceIndex+3];
+            const off = j - Math.floor(bandwidth / 2);
+            const sx = Math.max(0, Math.min(Math.round(bx + perpx * off), canvas.width - 1));
+            const sy = Math.max(0, Math.min(Math.round(by + perpy * off), canvas.height - 1));
+            const si = (sy * canvas.width + sx) * 4;
+            const ti = (j * length + i) * 4;
+            resultData.data[ti]     = imgCopy.data[si];
+            resultData.data[ti + 1] = imgCopy.data[si + 1];
+            resultData.data[ti + 2] = imgCopy.data[si + 2];
+            resultData.data[ti + 3] = imgCopy.data[si + 3];
         }
     }
 
-
-    if (canvasSlice) {
-        const ctxSlice = canvasSlice.getContext('2d');
-        ctxSlice.clearRect(0, 0, canvas.width, canvas.height);
-        canvasSlice.width = length;
-        canvasSlice.height = bandwidth;
-        ctxSlice.putImageData(resultData, 0, 0);
-    } else {
+    // Slice canvas
+    if (!canvasSlice) {
         canvasSlice = document.createElement('canvas');
-        canvasSlice.width = length;
-        canvasSlice.height = bandwidth;
-        document.body.appendChild(canvasSlice);
-        const ctxSlice = canvasSlice.getContext('2d');
-        ctxSlice.putImageData(resultData, 0, 0);
+        sliceContainer.appendChild(canvasSlice);
     }
+    canvasSlice.width = length;
+    canvasSlice.height = bandwidth;
+    sliceImageData = resultData;
+    canvasSlice.getContext('2d').putImageData(resultData, 0, 0);
 
-    // --- Scale the displayed slice to fit 10vh in height, and scale width accordingly ---
-    const targetDisplayHeight = window.innerHeight * 0.025;
-    const scaleFactor = targetDisplayHeight / bandwidth;
-    canvasSlice.style.height = targetDisplayHeight + 'px';
-    canvasSlice.style.width = (length * scaleFactor) + 'px';
-
-    plotResults(resultData);
-}
-
-function plotResults(resultData) {
-    // Get the sidebar element
-    const sidebar = document.getElementById('sidebar');
-    let container;
-
+    // Plot canvas
     if (!canvasPlot) {
-        // Create a container for plot and controls
-        container = document.createElement('div');
-        container.style.display = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.alignItems = 'start';
-        container.style.gap = '10px';
-        container.style.padding = '20px 0';
-        // Remove any previous plot container in sidebar
-        const oldContainer = sidebar.querySelector('.plot-sidebar-container');
-        if (oldContainer) oldContainer.remove();
-        container.className = 'plot-sidebar-container';
-        sidebar.appendChild(container);
-
-        // Create canvas and add to container
         canvasPlot = document.createElement('canvas');
-        canvasPlot.width = 500;
-        canvasPlot.height = 400;
-        container.appendChild(canvasPlot);
-
-        // Create controls div
-        const controls = document.createElement('div');
-        controls.style.padding = '20px 0 0 0';
-        container.appendChild(controls);
-
-        // Add window size slider
-        const windowSliderContainer = document.createElement('div');
-        windowSliderContainer.className = 'slider-container';
-        const windowLabel = document.createElement('label');
-        windowLabel.textContent = 'Window Size';
-        windowLabel.className = 'slider-label';
-        windowSliderContainer.appendChild(windowLabel);
-        const windowSliderRow = document.createElement('div');
-        windowSliderRow.className = 'slider-row';
-        const windowValue = document.createElement('span');
-        windowValue.textContent = windowSize;
-        windowValue.className = 'slider-value';
-        const windowInput = document.createElement('input');
-        windowInput.type = 'range';
-        windowInput.min = '2';
-        windowInput.max = '20';
-        windowInput.value = windowSize;
-        windowInput.step = '1';
-        windowSliderRow.appendChild(windowValue);
-        windowSliderRow.appendChild(windowInput);
-        windowSliderContainer.appendChild(windowSliderRow);
-        controls.appendChild(windowSliderContainer);
-        controls.appendChild(document.createElement('br'));
-
-        // Add prominence slider
-        const promSliderContainer = document.createElement('div');
-        promSliderContainer.className = 'slider-container';
-        const promLabel = document.createElement('label');
-        promLabel.textContent = 'Prominence';
-        promLabel.className = 'slider-label';
-        promSliderContainer.appendChild(promLabel);
-        const promSliderRow = document.createElement('div');
-        promSliderRow.className = 'slider-row';
-        const promValue = document.createElement('span');
-        promValue.textContent = prominence;
-        promValue.className = 'slider-value';
-        const promInput = document.createElement('input');
-        promInput.type = 'range';
-        promInput.min = '1';
-        promInput.max = '50';
-        promInput.value = prominence;
-        promInput.step = '1';
-        promSliderRow.appendChild(promValue);
-        promSliderRow.appendChild(promInput);
-        promSliderContainer.appendChild(promSliderRow);
-        controls.appendChild(promSliderContainer);
-
-        // Update function
-        const updatePlot = () => {
-            windowSize = parseInt(windowInput.value);
-            prominence = parseInt(promInput.value);
-            windowValue.textContent = windowSize;
-            promValue.textContent = prominence;
-
-            // Recalculate smoothed data and valleys
-            let smoothedGray = smoothData(meanGray, windowSize);
-            let valleys = findValleysWithProminence(smoothedGray, prominence);
-
-            // Redraw plot
-            drawPlot(meanGray, smoothedGray, valleys);
-        };
-
-        windowInput.addEventListener('input', updatePlot);
-        promInput.addEventListener('input', updatePlot);
-    } else {
-        // If already created, just get the container
-        container = sidebar.querySelector('.plot-sidebar-container');
+        canvasPlot.width = 600;
+        canvasPlot.height = 300;
+        plotContainer.appendChild(canvasPlot);
     }
-
     ctxPlot = canvasPlot.getContext('2d');
 
-    // Calculate initial values
+    // Compute mean grayscale per column
     meanGray = [];
     for (let i = 0; i < resultData.width; i++) {
-        let sumGray = 0;
+        let sum = 0;
         for (let j = 0; j < resultData.height; j++) {
-            const index = (j * resultData.width + i) * 4;
-            sumGray += resultData.data[index];
+            sum += resultData.data[(j * resultData.width + i) * 4];
         }
-        meanGray.push(sumGray / resultData.height);
+        meanGray.push(sum / resultData.height);
     }
 
-    let smoothedGray = smoothData(meanGray, windowSize);
-    let valleys = findValleysWithProminence(smoothedGray, prominence);
+    const smoothed = smoothData(meanGray, windowSize);
+    const valleys = findValleysWithProminence(smoothed, prominence);
+    drawPlot(meanGray, smoothed, valleys);
 
-    // Separate drawing function
-    function drawPlot(meanGray, smoothedGray, valleys) {
-        // Clear previous plot
-        ctxPlot.clearRect(0, 0, canvasPlot.width, canvasPlot.height);
+    resultsSection.style.display = 'block';
+}
 
-        // Find min and max values for scaling
-        const minGray = Math.min(...meanGray);
-        const maxGray = Math.max(...meanGray);
-        const range = maxGray - minGray;
+// --- Plotting ---
 
-        // Plot settings
-        const padding = 20;
-        const plotHeight = canvasPlot.height - (2 * padding);
+function drawPlot(raw, smoothed, valleys) {
+    ctxPlot.clearRect(0, 0, canvasPlot.width, canvasPlot.height);
 
-        // Draw axes
+    const minVal = Math.min(...raw);
+    const maxVal = Math.max(...raw);
+    const range = maxVal - minVal || 1;
+
+    const pad = 20;
+    const ph = canvasPlot.height - 2 * pad;
+    const pw = canvasPlot.width - 2 * pad;
+
+    const xOf = (i, len) => pad + (i * pw / len);
+    const yOf = (v) => canvasPlot.height - pad - ((v - minVal) / range * ph);
+
+    // Axes
+    ctxPlot.beginPath();
+    ctxPlot.strokeStyle = '#ccc';
+    ctxPlot.lineWidth = 1;
+    ctxPlot.moveTo(pad, pad);
+    ctxPlot.lineTo(pad, canvasPlot.height - pad);
+    ctxPlot.lineTo(canvasPlot.width - pad, canvasPlot.height - pad);
+    ctxPlot.stroke();
+
+    // Raw data
+    ctxPlot.beginPath();
+    ctxPlot.strokeStyle = '#c0c0c0';
+    ctxPlot.lineWidth = 1;
+    for (let i = 0; i < raw.length; i++) {
+        const x = xOf(i, raw.length), y = yOf(raw[i]);
+        i === 0 ? ctxPlot.moveTo(x, y) : ctxPlot.lineTo(x, y);
+    }
+    ctxPlot.stroke();
+
+    // Smoothed data
+    ctxPlot.beginPath();
+    ctxPlot.strokeStyle = '#4CAF50';
+    ctxPlot.lineWidth = 2;
+    for (let i = 0; i < smoothed.length; i++) {
+        const x = xOf(i, smoothed.length), y = yOf(smoothed[i]);
+        i === 0 ? ctxPlot.moveTo(x, y) : ctxPlot.lineTo(x, y);
+    }
+    ctxPlot.stroke();
+
+    // Valley dots on plot
+    ctxPlot.fillStyle = '#ff3b30';
+    for (const v of valleys) {
         ctxPlot.beginPath();
-        ctxPlot.strokeStyle = '#000';
-        ctxPlot.moveTo(padding, padding);
-        ctxPlot.lineTo(padding, canvasPlot.height - padding);
-        ctxPlot.lineTo(canvasPlot.width - padding, canvasPlot.height - padding);
-        ctxPlot.stroke();
+        ctxPlot.arc(xOf(v.index, raw.length), yOf(v.value), 4, 0, 2 * Math.PI);
+        ctxPlot.fill();
+    }
 
-        // Plot the original data
-        ctxPlot.beginPath();
-        ctxPlot.strokeStyle = '#000000';
-        for (let i = 0; i < meanGray.length; i++) {
-            const x = padding + (i * (canvasPlot.width - 2 * padding) / meanGray.length);
-            const y = canvasPlot.height - padding - ((meanGray[i] - minGray) / range * plotHeight);
-            if (i === 0) {
-                ctxPlot.moveTo(x, y);
-            } else {
-                ctxPlot.lineTo(x, y);
-            }
+    // Valley markers on sliced strip (samma kolumnindex som profilen)
+    if (canvasSlice && sliceImageData) {
+        const sCtx = canvasSlice.getContext('2d');
+        sCtx.putImageData(sliceImageData, 0, 0);
+        const midY = Math.floor(bandwidth / 2);
+        const r = Math.max(3, Math.min(10, Math.floor(bandwidth / 14)));
+        sCtx.fillStyle = '#ff3b30';
+        for (const v of valleys) {
+            sCtx.beginPath();
+            sCtx.arc(v.index, midY, r, 0, 2 * Math.PI);
+            sCtx.fill();
         }
-        ctxPlot.stroke();
+    }
 
-        // Plot the smoothed data
-        ctxPlot.beginPath();
-        ctxPlot.strokeStyle = '#00FFFF';
-        for (let i = 0; i < smoothedGray.length; i++) {
-            const x = padding + (i * (canvasPlot.width - 2 * padding) / smoothedGray.length);
-            const y = canvasPlot.height - padding - ((smoothedGray[i] - minGray) / range * plotHeight);
-            if (i === 0) {
-                ctxPlot.moveTo(x, y);
-            } else {
-                ctxPlot.lineTo(x, y);
-            }
-        }
-        ctxPlot.stroke();
+    // Update ring count
+    ringCountEl.textContent = valleys.length;
 
-        // Draw valleys
-        ctxPlot.fillStyle = '#FF0000';
-        for (let valley of valleys) {
-            const x = padding + (valley.index * (canvasPlot.width - 2 * padding) / meanGray.length);
-            const y = canvasPlot.height - padding - ((valley.value - minGray) / range * plotHeight);
-            ctxPlot.beginPath();
-            ctxPlot.arc(x, y, 3, 0, 2 * Math.PI);
-            ctxPlot.fill();
-        }
+    // Redraw image with valley markers
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.putImageData(imgCopy, 0, 0);
 
-        // Update valley points on the original image
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.putImageData(imgCopy, 0, 0);
-        
-        // Redraw the original points and line
+    for (const p of points) {
         ctx.beginPath();
-        ctx.arc(points[0].x, points[0].y, dotSize, 0, 2 * Math.PI);
-        ctx.arc(points[1].x, points[1].y, dotSize, 0, 2 * Math.PI);
+        ctx.arc(p.x, p.y, dotSize, 0, 2 * Math.PI);
         ctx.fillStyle = '#FF0000';
         ctx.fill();
-
         ctx.beginPath();
-        ctx.arc(points[0].x, points[0].y, dotSize*3, 0, 2 * Math.PI);
-        ctx.strokeStyle = '#FF0000';
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(points[1].x, points[1].y, dotSize*3, 0, 2 * Math.PI);
-        ctx.strokeStyle = '#FF0000';
-        ctx.stroke();
-        
-        
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        ctx.lineTo(points[1].x, points[1].y);
-        ctx.strokeStyle = '#000000';
+        ctx.arc(p.x, p.y, dotSize * 3, 0, 2 * Math.PI);
         ctx.lineWidth = lineWidth;
+        ctx.strokeStyle = '#FF0000';
         ctx.stroke();
-
-        // Draw valley points on original image
-        ctx.fillStyle = '#FF0000';
-        for (let valley of valleys) {
-            const x = points[0].x + (valley.index * (points[1].x - points[0].x) / meanGray.length);
-            const y = points[0].y + (valley.index * (points[1].y - points[0].y) / meanGray.length);
-            ctx.beginPath();
-            ctx.arc(x, y, dotSize*0.5, 0, 2 * Math.PI);
-            ctx.fill();
-        }
-
-        // Update valley count
-        let oldValleyText = document.body.querySelector('.valley-count');
-        if (oldValleyText) oldValleyText.remove();
-        const valleyText = document.createElement('p');
-        valleyText.className = 'valley-count';
-        valleyText.textContent = `${valleys.length}`;
-        document.body.appendChild(valleyText);
     }
 
-    // Initial draw
-    drawPlot(meanGray, smoothedGray, valleys);
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    ctx.lineTo(points[1].x, points[1].y);
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+
+    ctx.fillStyle = '#ff3b30';
+    const dxLine = points[1].x - points[0].x;
+    const dyLine = points[1].y - points[0].y;
+    for (const v of valleys) {
+        const t = v.index / raw.length;
+        ctx.beginPath();
+        ctx.arc(points[0].x + t * dxLine, points[0].y + t * dyLine, dotSize * 0.5, 0, 2 * Math.PI);
+        ctx.fill();
+    }
 }
 
-function findValleysWithProminence(data, minProminence = 0) {
+function onSliderChange() {
+    windowSize = parseInt(windowSlider.value);
+    prominence = parseInt(prominenceSlider.value);
+    windowValueEl.textContent = windowSize;
+    prominenceValueEl.textContent = prominence;
+    if (meanGray.length > 0 && ctxPlot) {
+        const smoothed = smoothData(meanGray, windowSize);
+        const valleys = findValleysWithProminence(smoothed, prominence);
+        drawPlot(meanGray, smoothed, valleys);
+    }
+}
+
+// --- Signal processing ---
+
+function findValleysWithProminence(data, minProm) {
     const valleys = [];
-  
     for (let i = 1; i < data.length - 1; i++) {
-      const current = data[i];
-      const prev = data[i - 1];
-      const next = data[i + 1];
-  
-      // Check for local minimum
-      if (current < prev && current < next) {
-        // Look left
-        let leftMax = prev;
-        for (let j = i - 2; j >= 0 && data[j] > current; j--) {
-          if (data[j] > leftMax) leftMax = data[j];
+        if (data[i] >= data[i - 1] || data[i] >= data[i + 1]) continue;
+        let leftMax = data[i - 1];
+        for (let j = i - 2; j >= 0 && data[j] > data[i]; j--) {
+            if (data[j] > leftMax) leftMax = data[j];
         }
-  
-        // Look right
-        let rightMax = next;
-        for (let j = i + 2; j < data.length && data[j] > current; j++) {
-          if (data[j] > rightMax) rightMax = data[j];
+        let rightMax = data[i + 1];
+        for (let j = i + 2; j < data.length && data[j] > data[i]; j++) {
+            if (data[j] > rightMax) rightMax = data[j];
         }
-  
-        // Calculate prominence
-        const prominence = Math.min(leftMax - current, rightMax - current);
-  
-        if (prominence >= minProminence) {
-          valleys.push({ index: i, value: current, prominence });
+        const prom = Math.min(leftMax - data[i], rightMax - data[i]);
+        if (prom >= minProm) {
+            valleys.push({ index: i, value: data[i], prominence: prom });
         }
-      }
     }
-  
     return valleys;
-  }
-
-  function smoothData(data, windowSize = 5) {
-    // Apply moving average smoothing
-    let smoothedGray = [];
-    
-    for (let i = 0; i < data.length; i++) {
-        let sum = 0;
-        let count = 0;
-        
-        // Calculate average of surrounding points
-        for (let j = Math.max(0, i - Math.floor(windowSize/2)); 
-             j <= Math.min(data.length - 1, i + Math.floor(windowSize/2)); j++) {
-            sum += data[j];
-            count++;
-        }
-        
-        smoothedGray.push(sum / count);
-    }
-
-    return smoothedGray;
 }
-// Start the process
-loadImage();
+
+function smoothData(data, win) {
+    const result = [];
+    const half = Math.floor(win / 2);
+    for (let i = 0; i < data.length; i++) {
+        let sum = 0, count = 0;
+        const lo = Math.max(0, i - half);
+        const hi = Math.min(data.length - 1, i + half);
+        for (let j = lo; j <= hi; j++) { sum += data[j]; count++; }
+        result.push(sum / count);
+    }
+    return result;
+}

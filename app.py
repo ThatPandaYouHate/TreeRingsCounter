@@ -17,9 +17,14 @@ def index():
     """Servar huvudsidan"""
     return send_from_directory(BASE_DIR, 'index.html')
 
+ALLOWED_EXTENSIONS = {'.html', '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp'}
+
 @app.route('/<path:filename>')
 def serve_static(filename):
     """Servar statiska filer (JS, CSS, bilder, etc.)"""
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return "Not Found", 404
     return send_from_directory(BASE_DIR, filename)
 
 if __name__ == '__main__':

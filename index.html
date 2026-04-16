@@ -1,252 +1,236 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="sv">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tree Rings Analysis</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Tree Ring Counter</title>
     <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            margin: 0;
-            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f2f2f7;
+            color: #222;
+            -webkit-tap-highlight-color: transparent;
+            overflow-x: hidden;
+        }
+
+        /* Upload screen */
+        #upload-container {
             display: flex;
             flex-direction: column;
             align-items: center;
-        }
-        canvas {
-            border: 1px solid #ccc;
-        }
-        #upload-container {
-            margin-bottom: 20px;
-            display: flex;
             justify-content: center;
-            padding: 20px;
+            min-height: 85vh;
+            padding: 24px;
         }
-        #imageUpload {
-            display: none;  /* Hide the default file input */
+        #upload-container h1 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-bottom: 6px;
         }
+        #upload-container .subtitle {
+            color: #888;
+            font-size: 0.95rem;
+            margin-bottom: 40px;
+        }
+        #imageUpload { display: none; }
         .upload-btn {
-            display: inline-block;
-            background-color: #4CAF50;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            max-width: 360px;
+            min-height: 220px;
+            background: #fff;
+            border: 3px dashed #4CAF50;
+            border-radius: 20px;
             cursor: pointer;
-            font-size: 16px;
-            transition: background-color 0.3s;
-            border: none;
+            font-size: 1.05rem;
+            color: #4CAF50;
+            padding: 32px 24px;
             text-align: center;
+            transition: background 0.15s;
+            line-height: 1.5;
         }
-        .upload-btn:hover {
-            background-color: #45a049;
+        .upload-btn:active { background: #e8f5e9; }
+        .upload-btn .icon { font-size: 3.2rem; margin-bottom: 14px; }
+
+        /* Instructions bar */
+        #instructions {
+            display: none;
+            background: #fff;
+            padding: 14px 16px;
+            text-align: center;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #333;
+            border-bottom: 1px solid #e0e0e0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
-        .canvas-container {
-            width: 90vw;
-            border: 2px solid #ccc;
+
+        /* Canvas area */
+        #canvas-host .canvas-container {
+            width: 100%;
             overflow: hidden;
             position: relative;
-            margin: 40px;
-            margin-bottom: 10px;
+            background: #1a1a1a;
+            touch-action: none;
         }
-        .canvas-wrapper {
+        #canvas-host .canvas-wrapper {
             position: absolute;
-            cursor: move;
             transform-origin: 0 0;
         }
-        #hamburger-menu {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            z-index: 1001;
-        }
-        .hamburger-icon {
-            width: 25px;
-            height: 32px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            cursor: pointer;
-            z-index: 1002;
-        }
-        .hamburger-icon span {
-            display: block;
-            height: 4px;
-            width: 100%;
-            background: #333;
-            margin: 3px 0;
-            border-radius: 2px;
-            transition: 0.3s;
-        }
-        .sidebar {
-            position: fixed;
-            top: 0;
-            left: -80vw;
-            width: 80vw;
-            height: 100vh;
-            background: #fff;
-            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
-            z-index: 1001;
-            transition: left 0.3s;
-            overflow-y: auto;
-        }
-        .sidebar.open {
-            left: 0;
-        }
-        .sidebar ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        .sidebar ul li {
-            margin: 24px 0;
-            text-align: left;
-            padding-left: 24px;
-        }
-        .sidebar ul li a {
-            color: #333;
-            text-decoration: none;
-            font-size: 18px;
-            transition: color 0.2s;
-        }
-        .sidebar ul li a:hover {
-            color: #4CAF50;
-        }
-        .sidebar-overlay {
+
+        /* Results */
+        #results-section {
             display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0,0,0,0.2);
-            z-index: 1000;
+            padding: 12px;
+            padding-bottom: 0;
         }
-        .sidebar-overlay.open {
-            display: block;
-        }
-        .plot-sidebar-container {
-            width: 100%;
-        }
-        .plot-sidebar-container canvas {
-            width: 90% !important;
-            max-width: 520px;
-            height: auto !important;
-            display: block;
-            margin: 0 auto;
-        }
-        @media (max-width: 600px) {
-            .sidebar {
-                width: 80vw;
-                min-width: 0;
-                left: -100vw;
-            }
-            .sidebar.open {
-                left: 0;
-            }
-            .plot-sidebar-container canvas {
-                max-width: 96vw;
-            }
-        }
-        .slider-container {
-            width: 100%;
-            margin-bottom: 18px;
-        }
-        .slider-label {
-            display: block;
-            text-align: center;
-            font-weight: 500;
-            margin-bottom: 4px;
-        }
-        .slider-row {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            width: 100%;
-        }
-        .slider-value {
-            min-width: 32px;
-            text-align: right;
-            font-family: monospace;
-            font-size: 1.1em;
-        }
-        .slider-row input[type="range"] {
-            flex: 1;
-            margin-left: 0;
-        }
-        .valley-count {
-            position: absolute;
-            top: 18px;
-            right: 24px;
+        .card {
             background: #fff;
-            color: #222;
-            font-weight: bold;
-            font-size: 1.15em;
-            border-radius: 6px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            padding: 8px 18px;
-            z-index: 2000;
-            margin: 0;
-            text-align: right;
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            margin-bottom: 12px;
         }
+        .card-label {
+            font-size: 0.8rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 8px;
+        }
+        .ring-count {
+            font-size: 2.8rem;
+            font-weight: 700;
+            color: #4CAF50;
+            text-align: center;
+            padding: 4px 0;
+        }
+        #slice-container canvas {
+            width: 100%;
+            display: block;
+            border-radius: 6px;
+        }
+        #plot-container canvas {
+            width: 100%;
+            display: block;
+        }
+
+        /* Sliders */
+        .slider-group { margin-bottom: 14px; }
+        .slider-group:last-child { margin-bottom: 0; }
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .slider-val {
+            font-weight: 600;
+            font-family: 'SF Mono', ui-monospace, monospace;
+            color: #4CAF50;
+            font-size: 0.95rem;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 30px;
+            height: 30px;
+            background: #4CAF50;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+        }
+
+        /* Buttons */
+        .reset-btn {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            background: #ff3b30;
+            color: #fff;
+            border: none;
+            border-radius: 14px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 0 12px 12px;
+            width: calc(100% - 24px);
+        }
+        .reset-btn:active { background: #d32f2f; }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 20px 16px 32px;
+            color: #aaa;
+            font-size: 0.8rem;
+        }
+        footer a { color: #4CAF50; text-decoration: none; }
     </style>
 </head>
 <body>
     <div id="upload-container">
-        <input type="file" id="imageUpload" accept="image/*">
-        <label for="imageUpload" class="upload-btn">Choose Image</label>
+        <h1>Tree Ring Counter</h1>
+        <p class="subtitle">Analysera trädringar från ett tvärsnittsfoto</p>
+        <input type="file" id="imageUpload" accept="image/*" capture="environment">
+        <label for="imageUpload" class="upload-btn">
+            <span class="icon">📷</span>
+            Tryck för att ta ett foto<br>eller välj en bild
+        </label>
     </div>
-    
-    <!-- Hamburger Menu -->
-    <div id="hamburger-menu">
-        <div class="hamburger-icon" id="hamburger-icon">
-            <span></span>
-            <span></span>
-            <span></span>
+
+    <div id="instructions"></div>
+    <div id="canvas-host"></div>
+
+    <div id="results-section">
+        <div class="card" style="text-align:center">
+            <div class="card-label">Antal ringar</div>
+            <div class="ring-count" id="ring-count">&mdash;</div>
         </div>
-        <nav class="sidebar" id="sidebar">
-        </nav>
-        <div class="sidebar-overlay" id="sidebar-overlay"></div>
+        <div class="card" id="slice-container">
+            <div class="card-label">Tvärsnitt längs linjen</div>
+        </div>
+        <div class="card" id="plot-container">
+            <div class="card-label">Gråskaleprofil</div>
+        </div>
+        <div class="card" id="controls-card">
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span>Utjämning</span>
+                    <span class="slider-val" id="window-value">4</span>
+                </div>
+                <input type="range" id="window-slider" min="2" max="20" value="4" step="1">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span>Prominence</span>
+                    <span class="slider-val" id="prominence-value">7</span>
+                </div>
+                <input type="range" id="prominence-slider" min="1" max="50" value="7" step="1">
+            </div>
+        </div>
+        <button class="reset-btn" id="reset-btn">Återställ</button>
     </div>
-    
-    <!-- Load the JavaScript file -->
+
+    <footer>
+        Kontakta mig: <a href="mailto:martin@bevemyr.com">martin@bevemyr.com</a>
+    </footer>
+
     <script src="TreeRings.js"></script>
-    <script>
-    // Hamburger menu logic
-    const hamburgerIcon = document.getElementById('hamburger-icon');
-    const sidebar = document.getElementById('sidebar');
-    const sidebarOverlay = document.getElementById('sidebar-overlay');
-
-    function toggleSidebar() {
-        sidebar.classList.toggle('open');
-        sidebarOverlay.classList.toggle('open');
-    }
-
-    // Mouse events
-    hamburgerIcon.addEventListener('click', toggleSidebar);
-    sidebarOverlay.addEventListener('click', toggleSidebar);
-
-    // Touch events for mobile devices
-    hamburgerIcon.addEventListener('touchstart', function(e) {
-        e.preventDefault(); // Prevent default touch behavior
-        toggleSidebar();
-    });
-    sidebarOverlay.addEventListener('touchstart', function(e) {
-        e.preventDefault(); // Prevent default touch behavior
-        toggleSidebar();
-    });
-
-    // Optional: Close sidebar when a menu link is clicked
-    document.querySelectorAll('#sidebar a').forEach(link => {
-        link.addEventListener('click', toggleSidebar);
-        link.addEventListener('touchstart', function(e) {
-            e.preventDefault(); // Prevent default touch behavior
-            toggleSidebar();
-        });
-    });
-    </script>
-    
-    <!-- Contact Information -->
-    <div style="position: fixed; bottom: 20px; left: 0; right: 0; text-align: center; color: #666; font-size: 20px; background: rgba(255, 255, 255, 0.9); padding: 10px; z-index: 1000;">
-        <p>Kontakta me at: <a style="color: #4CAF50; text-decoration: none;">martin@bevemyr.com</a></p>
-    </div>
 </body>
 </html>
