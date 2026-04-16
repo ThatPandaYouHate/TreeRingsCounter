@@ -21,6 +21,7 @@ let initialPinchScale = 1;
 
 // Analysis state
 let meanGray = [];
+let sliceImageData = null;
 
 // DOM references
 const uploadContainer = document.getElementById('upload-container');
@@ -35,10 +36,11 @@ const windowValueEl = document.getElementById('window-value');
 const prominenceSlider = document.getElementById('prominence-slider');
 const prominenceValueEl = document.getElementById('prominence-value');
 const resetBtn = document.getElementById('reset-btn');
+const imageUpload = document.getElementById('imageUpload');
 
 // --- Event wiring ---
 
-document.getElementById('imageUpload').addEventListener('change', function (e) {
+imageUpload.addEventListener('change', function (e) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -110,6 +112,7 @@ function resetState() {
     points = [];
     movePoint = -1;
     meanGray = [];
+    sliceImageData = null;
     canvasSlice = null;
     canvasPlot = null;
     ctxPlot = null;
@@ -120,23 +123,35 @@ function resetState() {
 }
 
 function resetAnalysis() {
+    if (canvas) {
+        canvas.parentElement?.parentElement?.remove();
+    }
+    canvas = null;
+    ctx = null;
+    img = null;
+    imageData = null;
+    imgCopy = null;
+
     points = [];
     movePoint = -1;
     meanGray = [];
-
-    if (ctx && imgCopy) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.putImageData(imgCopy, 0, 0);
-    }
-    resultsSection.style.display = 'none';
-    ringCountEl.textContent = '\u2014';
-
-    // Remove dynamically created canvases from their containers
+    sliceImageData = null;
     if (canvasSlice) { canvasSlice.remove(); canvasSlice = null; }
     if (canvasPlot) { canvasPlot.remove(); canvasPlot = null; ctxPlot = null; }
     resultCanvas = null;
+    scale = 1;
+    translateX = 0;
+    translateY = 0;
 
-    setInstruction('tap1');
+    resultsSection.style.display = 'none';
+    ringCountEl.textContent = '\u2014';
+
+    uploadContainer.style.display = 'flex';
+    instructionsBar.style.display = 'none';
+    instructionsBar.textContent = '';
+
+    imageUpload.value = '';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function setInstruction(step) {
@@ -384,6 +399,7 @@ function createSliceImage() {
     }
     canvasSlice.width = length;
     canvasSlice.height = bandwidth;
+    sliceImageData = resultData;
     canvasSlice.getContext('2d').putImageData(resultData, 0, 0);
 
     // Plot canvas
@@ -463,6 +479,20 @@ function drawPlot(raw, smoothed, valleys) {
         ctxPlot.beginPath();
         ctxPlot.arc(xOf(v.index, raw.length), yOf(v.value), 4, 0, 2 * Math.PI);
         ctxPlot.fill();
+    }
+
+    // Valley markers on sliced strip (samma kolumnindex som profilen)
+    if (canvasSlice && sliceImageData) {
+        const sCtx = canvasSlice.getContext('2d');
+        sCtx.putImageData(sliceImageData, 0, 0);
+        const midY = Math.floor(bandwidth / 2);
+        const r = Math.max(3, Math.min(10, Math.floor(bandwidth / 14)));
+        sCtx.fillStyle = '#ff3b30';
+        for (const v of valleys) {
+            sCtx.beginPath();
+            sCtx.arc(v.index, midY, r, 0, 2 * Math.PI);
+            sCtx.fill();
+        }
     }
 
     // Update ring count
