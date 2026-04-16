@@ -41,20 +41,21 @@
             justify-content: center;
             width: 100%;
             max-width: 360px;
-            min-height: 220px;
-            background: #fff;
-            border: 3px dashed #4CAF50;
+            aspect-ratio: 3 / 4;
+            background: url('exemple-bilder/exemple-bild.jpg') center / cover no-repeat;
+            border: 3px solid rgba(76, 175, 80, 0.6);
             border-radius: 20px;
             cursor: pointer;
             font-size: 1.05rem;
             color: #4CAF50;
             padding: 32px 24px;
             text-align: center;
-            transition: background 0.15s;
+            transition: opacity 0.15s;
             line-height: 1.5;
         }
-        .upload-btn:active { background: #e8f5e9; }
+        .upload-btn:active { opacity: 0.85; }
         .upload-btn .icon { font-size: 3.2rem; margin-bottom: 14px; }
+
 
         /* Instructions bar */
         #instructions {
