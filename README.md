@@ -46,7 +46,7 @@ Servern kommer att vara tillgänglig på `http://localhost:5000`
 
 ## GitHub Actions
 
-När koden pushas till `main`-branchen på GitHub, byggs automatiskt en Docker-container via GitHub Actions. Den byggda containern pushas till GitHub Container Registry (GHCR).
+När koden pushas till `main` eller `improvements` på GitHub, byggs automatiskt en Docker-container via GitHub Actions. Den byggda containern pushas till GitHub Container Registry (GHCR).
 
 ### Använda den byggda containern från GHCR:
 
@@ -61,7 +61,7 @@ docker run -p 5000:5000 ghcr.io/[ditt-användarnamn]/TreeRingsCounter:latest
 - Servar alla statiska filer (JavaScript, bilder, etc.)
 - Automatisk omladdning vid kodändringar (debug-läge i utveckling)
 - Docker-stöd för enkel deployment
-- Automatisk Docker-build vid push till main
+- Automatisk Docker-build vid push till `main` eller `improvements`
 
 ## Stoppa servern
 

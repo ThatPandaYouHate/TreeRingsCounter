@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - improvements
   workflow_dispatch:  # Tillåter manuell körning från GitHub UI
 
 jobs:
