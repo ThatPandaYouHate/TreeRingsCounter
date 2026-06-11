@@ -112,6 +112,16 @@
             text-align: center;
             padding: 4px 0;
         }
+        .ring-age {
+            font-size: 0.9rem;
+            color: #888;
+            text-align: center;
+        }
+        .hint {
+            font-size: 0.8rem;
+            color: #999;
+            margin-top: 8px;
+        }
         #slice-container canvas {
             width: 100%;
             display: block;
@@ -188,7 +198,7 @@
     <div id="upload-container">
         <h1>Tree Ring Counter</h1>
         <p class="subtitle">Analysera trädringar från ett tvärsnittsfoto</p>
-        <input type="file" id="imageUpload" accept="image/*" capture="environment">
+        <input type="file" id="imageUpload" accept="image/*">
         <label for="imageUpload" class="upload-btn">
             <span class="icon">📷</span>
             Tryck för att ta ett foto<br>eller välj en bild
@@ -202,24 +212,21 @@
         <div class="card" style="text-align:center">
             <div class="card-label">Antal ringar</div>
             <div class="ring-count" id="ring-count">&mdash;</div>
+            <div class="ring-age" id="ring-detail">&asymp; trädets ålder i år</div>
         </div>
         <div class="card" id="slice-container">
             <div class="card-label">Tvärsnitt längs linjen</div>
+            <div id="slice-canvas-host"></div>
+            <p class="hint">Tryck på bilden för att lägga till en missad ring eller ta bort en felaktig</p>
         </div>
         <div class="card" id="controls-card">
             <div class="slider-group">
                 <div class="slider-header">
-                    <span>Utjämning</span>
-                    <span class="slider-val" id="window-value">4</span>
+                    <span>Känslighet</span>
+                    <span class="slider-val" id="sensitivity-value">5</span>
                 </div>
-                <input type="range" id="window-slider" min="2" max="20" value="4" step="1">
-            </div>
-            <div class="slider-group">
-                <div class="slider-header">
-                    <span>Prominence</span>
-                    <span class="slider-val" id="prominence-value">7</span>
-                </div>
-                <input type="range" id="prominence-slider" min="1" max="50" value="7" step="1">
+                <input type="range" id="sensitivity-slider" min="1" max="10" value="5" step="1">
+                <p class="hint">Högre värde hittar fler ringar</p>
             </div>
         </div>
         <div class="card" id="plot-container">

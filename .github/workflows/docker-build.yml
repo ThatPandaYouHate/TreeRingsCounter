@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - improvements
+    tags:
+      - 'v*'  # Versionstaggar (v1.1.0) bygger releaser med versionsnummer
   workflow_dispatch:  # Tillåter manuell körning från GitHub UI
 
 jobs:
@@ -35,8 +37,9 @@ jobs:
       with:
         images: ghcr.io/${{ github.repository }}
         tags: |
-          type=raw,value=v1.0.1
-          type=raw,value=latest,enable={{is_default_branch}}
+          # Versionstagg v1.2.3 ger imagetaggar 1.2.3 och 1.2 (+ latest automatiskt)
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
           type=ref,event=branch
           type=sha,prefix={{branch}}-
     

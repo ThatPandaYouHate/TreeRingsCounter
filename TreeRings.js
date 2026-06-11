@@ -4,11 +4,11 @@ let canvasSlice, canvasPlot, ctxPlot;
 let resultCanvas;
 let points = [];
 let img, imageData, imgCopy;
-let windowSize = 4;
-let prominence = 7;
+let sensitivity = 5;
 const bandwidth = 100;
-const dotSize = 20;
-const lineWidth = 10;
+const maxImageDim = 1800;
+let dotSize = 20;
+let lineWidth = 10;
 
 // Pan & zoom state
 let scale = 1;
@@ -22,6 +22,12 @@ let initialPinchScale = 1;
 // Analysis state
 let meanGray = [];
 let sliceImageData = null;
+let autoAnalysis = null;     // { valleys, smoothed, spacing }
+let manualAdds = [];         // ring positions added by user (column index)
+let removedAuto = new Set(); // auto-detected rings removed by user (column index)
+let auxCounts = [];          // ring counts from extra directions around the pith
+let auxTimer = null;
+const auxAngles = [-24, -12, 12, 24]; // degrees relative to the main line
 
 // DOM references
 const uploadContainer = document.getElementById('upload-container');
@@ -29,12 +35,11 @@ const instructionsBar = document.getElementById('instructions');
 const canvasHost = document.getElementById('canvas-host');
 const resultsSection = document.getElementById('results-section');
 const ringCountEl = document.getElementById('ring-count');
-const sliceContainer = document.getElementById('slice-container');
+const ringDetailEl = document.getElementById('ring-detail');
+const sliceCanvasHost = document.getElementById('slice-canvas-host');
 const plotContainer = document.getElementById('plot-container');
-const windowSlider = document.getElementById('window-slider');
-const windowValueEl = document.getElementById('window-value');
-const prominenceSlider = document.getElementById('prominence-slider');
-const prominenceValueEl = document.getElementById('prominence-value');
+const sensitivitySlider = document.getElementById('sensitivity-slider');
+const sensitivityValueEl = document.getElementById('sensitivity-value');
 const resetBtn = document.getElementById('reset-btn');
 const imageUpload = document.getElementById('imageUpload');
 
@@ -48,8 +53,7 @@ imageUpload.addEventListener('change', function (e) {
     reader.readAsDataURL(file);
 });
 
-windowSlider.addEventListener('input', onSliderChange);
-prominenceSlider.addEventListener('input', onSliderChange);
+sensitivitySlider.addEventListener('input', onSensitivityChange);
 resetBtn.addEventListener('click', resetAnalysis);
 
 // --- Core functions ---
@@ -74,12 +78,19 @@ function loadImage(src) {
         wrapper.className = 'canvas-wrapper';
 
         canvas = document.createElement('canvas');
+        // Skala ner stora foton — snabbare analys utan synbar precisionsförlust
+        const fit = Math.min(1, maxImageDim / Math.max(img.width, img.height));
+        const iw = Math.round(img.width * fit);
+        const ih = Math.round(img.height * fit);
+        dotSize = Math.max(10, Math.round(iw / 90));
+        lineWidth = Math.max(4, Math.round(iw / 250));
+
         canvasDisplayWidth = window.innerWidth;
-        const aspectRatio = img.height / img.width;
+        const aspectRatio = ih / iw;
         canvasDisplayHeight = canvasDisplayWidth * aspectRatio;
 
-        canvas.width = img.width;
-        canvas.height = img.height;
+        canvas.width = iw;
+        canvas.height = ih;
         canvas.style.width = canvasDisplayWidth + 'px';
         canvas.style.height = canvasDisplayHeight + 'px';
 
@@ -91,7 +102,7 @@ function loadImage(src) {
         canvasHost.appendChild(container);
 
         ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, img.width, img.height);
+        ctx.drawImage(img, 0, 0, iw, ih);
 
         imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const d = imageData.data;
@@ -104,8 +115,18 @@ function loadImage(src) {
 
         setupInteractions(wrapper, container);
         uploadContainer.style.display = 'none';
-        setInstruction('tap1');
+        suggestLine();
     };
+}
+
+// Föreslå en linje från bildens mitt (där märgen oftast hamnar) ut mot kanten
+function suggestLine() {
+    const cx = Math.round(canvas.width / 2);
+    const cy = Math.round(canvas.height / 2);
+    const ex = Math.round(canvas.width * 0.96);
+    points = [{ x: cx, y: cy }, { x: ex, y: cy }];
+    drawLine();
+    setInstruction('suggested');
 }
 
 function resetState() {
@@ -113,8 +134,13 @@ function resetState() {
     movePoint = -1;
     meanGray = [];
     sliceImageData = null;
-    canvasSlice = null;
-    canvasPlot = null;
+    autoAnalysis = null;
+    manualAdds = [];
+    removedAuto.clear();
+    auxCounts = [];
+    clearTimeout(auxTimer);
+    if (canvasSlice) { canvasSlice.remove(); canvasSlice = null; }
+    if (canvasPlot) { canvasPlot.remove(); canvasPlot = null; }
     ctxPlot = null;
     resultCanvas = null;
     scale = 1;
@@ -136,6 +162,11 @@ function resetAnalysis() {
     movePoint = -1;
     meanGray = [];
     sliceImageData = null;
+    autoAnalysis = null;
+    manualAdds = [];
+    removedAuto.clear();
+    auxCounts = [];
+    clearTimeout(auxTimer);
     if (canvasSlice) { canvasSlice.remove(); canvasSlice = null; }
     if (canvasPlot) { canvasPlot.remove(); canvasPlot = null; ctxPlot = null; }
     resultCanvas = null;
@@ -145,6 +176,7 @@ function resetAnalysis() {
 
     resultsSection.style.display = 'none';
     ringCountEl.textContent = '\u2014';
+    ringDetailEl.textContent = '\u2248 tr\u00e4dets \u00e5lder i \u00e5r';
 
     uploadContainer.style.display = 'flex';
     instructionsBar.style.display = 'none';
@@ -159,6 +191,7 @@ function setInstruction(step) {
     const messages = {
         tap1: 'Tryck på bilden för att placera första punkten',
         tap2: 'Tryck för att placera andra punkten',
+        suggested: 'Dra punkterna: den första till mitten (märgen), den andra till barken',
         done: 'Dra i punkterna för att justera — scrolla ner för resultat',
     };
     instructionsBar.textContent = messages[step] || '';
@@ -395,7 +428,8 @@ function createSliceImage() {
     // Slice canvas
     if (!canvasSlice) {
         canvasSlice = document.createElement('canvas');
-        sliceContainer.appendChild(canvasSlice);
+        sliceCanvasHost.appendChild(canvasSlice);
+        canvasSlice.addEventListener('click', onSliceTap);
     }
     canvasSlice.width = length;
     canvasSlice.height = bandwidth;
@@ -421,11 +455,127 @@ function createSliceImage() {
         meanGray.push(sum / resultData.height);
     }
 
-    const smoothed = smoothData(meanGray, windowSize);
-    const valleys = findValleysWithProminence(smoothed, prominence);
-    drawPlot(meanGray, smoothed, valleys);
+    // Linjen har ändrats — manuella justeringar gäller inte längre
+    manualAdds = [];
+    removedAuto.clear();
+    runAnalysis();
 
     resultsSection.style.display = 'block';
+}
+
+function runAnalysis() {
+    if (!ctxPlot || meanGray.length < 10) return;
+    autoAnalysis = analyzeProfile(meanGray, sensitivity);
+    // Extra riktningar är dyra — räkna om dem först när linjen legat stilla en stund
+    auxCounts = [];
+    clearTimeout(auxTimer);
+    auxTimer = setTimeout(runAuxAnalysis, 300);
+    drawPlot(meanGray, autoAnalysis.smoothed, mergedValleys());
+}
+
+// Analysera fler riktningar från första punkten (märgen) — medianen av
+// räkningarna är robust mot sprickor och kvistar längs en enskild linje
+function runAuxAnalysis() {
+    auxCounts = [];
+    if (!autoAnalysis || points.length !== 2 || !canvas) return;
+    const x1 = points[0].x, y1 = points[0].y;
+    const dx = points[1].x - x1, dy = points[1].y - y1;
+    const len = Math.hypot(dx, dy);
+    const theta = Math.atan2(dy, dx);
+
+    for (const deg of auxAngles) {
+        const a = theta + deg * Math.PI / 180;
+        const ux = Math.cos(a), uy = Math.sin(a);
+        // Klipp linjen mot bildkanten
+        let t = len;
+        if (ux > 0) t = Math.min(t, (canvas.width - 1 - x1) / ux);
+        else if (ux < 0) t = Math.min(t, -x1 / ux);
+        if (uy > 0) t = Math.min(t, (canvas.height - 1 - y1) / uy);
+        else if (uy < 0) t = Math.min(t, -y1 / uy);
+        if (t < len * 0.5) continue; // för avklippt för att vara jämförbar
+
+        const prof = extractProfile(x1, y1, x1 + ux * t, y1 + uy * t, 40);
+        if (prof.length < 10) continue;
+        auxCounts.push(analyzeProfile(prof, sensitivity).valleys.length);
+    }
+    updateRingCount();
+}
+
+// Medelgråskala per kolumn längs en linje, utan att bygga någon bildremsa
+function extractProfile(x1, y1, x2, y2, band) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const norm = Math.hypot(dx, dy);
+    const length = Math.round(norm);
+    if (!length) return [];
+    const perpx = -dy / norm, perpy = dx / norm;
+    const prof = [];
+    for (let i = 0; i < length; i++) {
+        const bx = x1 + dx * i / length;
+        const by = y1 + dy * i / length;
+        let sum = 0;
+        for (let j = 0; j < band; j++) {
+            const off = j - Math.floor(band / 2);
+            const sx = Math.max(0, Math.min(Math.round(bx + perpx * off), canvas.width - 1));
+            const sy = Math.max(0, Math.min(Math.round(by + perpy * off), canvas.height - 1));
+            sum += imgCopy.data[(sy * canvas.width + sx) * 4];
+        }
+        prof.push(sum / band);
+    }
+    return prof;
+}
+
+// Stora talet: medianen av alla riktningar — eller användarens egen räkning
+// så fort hen har justerat manuellt
+function updateRingCount() {
+    if (!autoAnalysis) return;
+    const hasManual = manualAdds.length > 0 || removedAuto.size > 0;
+    const counts = [autoAnalysis.valleys.length, ...auxCounts].sort((a, b) => a - b);
+    if (hasManual || counts.length < 3) {
+        ringCountEl.textContent = mergedValleys().length;
+        ringDetailEl.textContent = hasManual
+            ? 'Manuellt justerad — ≈ trädets ålder i år'
+            : '≈ trädets ålder i år';
+    } else {
+        ringCountEl.textContent = counts[Math.floor(counts.length / 2)];
+        ringDetailEl.textContent = `Median av ${counts.length} riktningar: ${counts.join(' · ')}`;
+    }
+}
+
+function mergedValleys() {
+    if (!autoAnalysis) return [];
+    const list = autoAnalysis.valleys
+        .filter(v => !removedAuto.has(v.index))
+        .map(v => ({ index: v.index, value: v.value, manual: false }));
+    for (const idx of manualAdds) {
+        list.push({ index: idx, value: autoAnalysis.smoothed[idx], manual: true });
+    }
+    list.sort((a, b) => a.index - b.index);
+    return list;
+}
+
+// Tryck på snittbilden: nära en markering tar bort den, annars läggs en ny till
+function onSliceTap(e) {
+    if (!autoAnalysis) return;
+    const rect = canvasSlice.getBoundingClientRect();
+    const x = Math.round((e.clientX - rect.left) * (canvasSlice.width / rect.width));
+    if (x < 0 || x >= meanGray.length) return;
+
+    const tol = Math.max(8, Math.round(canvasSlice.width * 0.015));
+    let nearest = null;
+    for (const v of mergedValleys()) {
+        const d = Math.abs(v.index - x);
+        if (d <= tol && (!nearest || d < Math.abs(nearest.index - x))) nearest = v;
+    }
+    if (nearest) {
+        if (nearest.manual) {
+            manualAdds = manualAdds.filter(i => i !== nearest.index);
+        } else {
+            removedAuto.add(nearest.index);
+        }
+    } else {
+        manualAdds.push(x);
+    }
+    drawPlot(meanGray, autoAnalysis.smoothed, mergedValleys());
 }
 
 // --- Plotting ---
@@ -474,8 +624,8 @@ function drawPlot(raw, smoothed, valleys) {
     ctxPlot.stroke();
 
     // Valley dots on plot
-    ctxPlot.fillStyle = '#ff3b30';
     for (const v of valleys) {
+        ctxPlot.fillStyle = v.manual ? '#2979ff' : '#ff3b30';
         ctxPlot.beginPath();
         ctxPlot.arc(xOf(v.index, raw.length), yOf(v.value), 4, 0, 2 * Math.PI);
         ctxPlot.fill();
@@ -487,8 +637,8 @@ function drawPlot(raw, smoothed, valleys) {
         sCtx.putImageData(sliceImageData, 0, 0);
         const midY = Math.floor(bandwidth / 2);
         const r = Math.max(5, Math.min(14, Math.floor(bandwidth / 10)));
-        sCtx.fillStyle = '#ff3b30';
         for (const v of valleys) {
+            sCtx.fillStyle = v.manual ? '#2979ff' : '#ff3b30';
             sCtx.beginPath();
             sCtx.arc(v.index, midY, r, 0, 2 * Math.PI);
             sCtx.fill();
@@ -496,7 +646,7 @@ function drawPlot(raw, smoothed, valleys) {
     }
 
     // Update ring count
-    ringCountEl.textContent = valleys.length;
+    updateRingCount();
 
     // Redraw image with valley markers
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -521,33 +671,89 @@ function drawPlot(raw, smoothed, valleys) {
     ctx.lineWidth = lineWidth;
     ctx.stroke();
 
-    ctx.fillStyle = '#ff3b30';
     const dxLine = points[1].x - points[0].x;
     const dyLine = points[1].y - points[0].y;
     for (const v of valleys) {
         const t = v.index / raw.length;
+        ctx.fillStyle = v.manual ? '#2979ff' : '#ff3b30';
         ctx.beginPath();
         ctx.arc(points[0].x + t * dxLine, points[0].y + t * dyLine, dotSize * 0.5, 0, 2 * Math.PI);
         ctx.fill();
     }
 }
 
-function onSliderChange() {
-    windowSize = parseInt(windowSlider.value);
-    prominence = parseInt(prominenceSlider.value);
-    windowValueEl.textContent = windowSize;
-    prominenceValueEl.textContent = prominence;
-    if (meanGray.length > 0 && ctxPlot) {
-        const smoothed = smoothData(meanGray, windowSize);
-        const valleys = findValleysWithProminence(smoothed, prominence);
-        drawPlot(meanGray, smoothed, valleys);
-    }
+function onSensitivityChange() {
+    sensitivity = parseInt(sensitivitySlider.value);
+    sensitivityValueEl.textContent = sensitivity;
+    manualAdds = [];
+    removedAuto.clear();
+    runAnalysis();
 }
 
 // --- Signal processing ---
 
-function findValleysWithProminence(data, minProm) {
-    const valleys = [];
+// Hela analysen: ljusutjämning (detrend) + automatisk parameterskattning.
+// Mörka band (sommarved) blir dalar i gråskaleprofilen — en dal per årsring.
+function analyzeProfile(profile, sens) {
+    // 1. Grov detrend för att kunna skatta ringavståndet
+    const sm0 = smoothData(profile, 3);
+    const det0 = detrendSignal(sm0, Math.max(31, Math.floor(profile.length / 10)));
+    const spacing = estimateSpacing(det0) || 20;
+
+    // 2. Utjämning och baslinje anpassade till ringavståndet
+    const win = Math.max(3, Math.floor(spacing / 5));
+    const smoothed = smoothData(profile, win);
+    const det = detrendSignal(smoothed, Math.max(31, spacing * 4));
+
+    // 3. Tröskel relativt brusnivån; känsligheten skalar den
+    const noise = madNoise(det);
+    const minProm = Math.max(0.8, (12 / sens) * noise);
+    const minDist = Math.max(2, Math.round(spacing * 0.35));
+
+    const valleys = findValleysWithProminence(det, minProm, minDist)
+        .map(v => ({ index: v.index, value: smoothed[v.index], prominence: v.prominence }));
+    return { valleys, smoothed, spacing };
+}
+
+// Tar bort långsamma ljusvariationer (skuggor, ojämn belysning)
+function detrendSignal(data, win) {
+    const base = smoothData(data, win);
+    return data.map((d, i) => d - base[i]);
+}
+
+// Dominerande ringavstånd via autokorrelation
+function estimateSpacing(det) {
+    const n = det.length;
+    if (n < 20) return null;
+    const mean = det.reduce((a, b) => a + b, 0) / n;
+    const c = det.map(v => v - mean);
+    let variance = 0;
+    for (const x of c) variance += x * x;
+    variance = variance / n || 1;
+
+    const maxLag = Math.min(Math.floor(n / 3), 200);
+    const ac = [];
+    for (let lag = 1; lag < maxLag; lag++) {
+        let s = 0;
+        for (let i = 0; i < n - lag; i++) s += c[i] * c[i + lag];
+        ac.push((s / (n - lag)) / variance);
+    }
+    for (let i = 2; i < ac.length - 1; i++) {
+        if (ac[i] > ac[i - 1] && ac[i] > ac[i + 1] && ac[i] > 0.05) return i + 1;
+    }
+    return null;
+}
+
+// Brusnivå: median av absoluta skillnader mellan grannvärden
+function madNoise(det) {
+    const diffs = [];
+    for (let i = 0; i < det.length - 1; i++) diffs.push(Math.abs(det[i + 1] - det[i]));
+    diffs.sort((a, b) => a - b);
+    return diffs[Math.floor(diffs.length / 2)] || 0.5;
+}
+
+function findValleysWithProminence(data, minProm, minDist) {
+    let valleys = [];
     for (let i = 1; i < data.length - 1; i++) {
         if (data[i] >= data[i - 1] || data[i] >= data[i + 1]) continue;
         let leftMax = data[i - 1];
@@ -562,6 +768,15 @@ function findValleysWithProminence(data, minProm) {
         if (prom >= minProm) {
             valleys.push({ index: i, value: data[i], prominence: prom });
         }
+    }
+    // Vid för tätt liggande dalar behålls den mest framträdande
+    if (minDist > 1 && valleys.length > 1) {
+        const byProm = [...valleys].sort((a, b) => b.prominence - a.prominence);
+        const kept = [];
+        for (const v of byProm) {
+            if (kept.every(k => Math.abs(v.index - k.index) >= minDist)) kept.push(v);
+        }
+        valleys = kept.sort((a, b) => a.index - b.index);
     }
     return valleys;
 }
